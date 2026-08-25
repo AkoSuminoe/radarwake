@@ -4,12 +4,11 @@
     "ms-vscode.cpptools",
     "ms-python.python",
     "ms-python.vscode-pylance",
+    "ms-azuretools.vscode-docker",
+    "bradlc.vscode-tailwindcss",
+    "dbaeumer.vscode-eslint",
     "ms-vscode.powershell",
     "editorconfig.editorconfig",
-    "yzhang.markdown-all-in-one",
     "github.vscode-pull-request-github"
-  ],
-  "unwantedRecommendations": [
-    "vsciot-vscode.vscode-arduino"
   ]
 }

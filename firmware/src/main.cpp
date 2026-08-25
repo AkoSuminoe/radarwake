@@ -1,1 +1,1 @@
-// radarwake - ESP32 firmware (TODO)
+// TODO: ESP32 firmware

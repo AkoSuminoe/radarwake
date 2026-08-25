@@ -1,28 +1,41 @@
-# PlatformIO
-firmware/.pio/
-firmware/.vscode/
-.pio/
-
-# Kullanıcıya özel gizli ayarlar (asla commit edilmez)
+# Gizli degerler - asla commit edilmez
+.env
+.env.local
+*.env
+!.env.example
 firmware/src/config.h
 pc-agent/config.json
-*.local
-.env
 
 # Python
 __pycache__/
 *.py[cod]
 .venv/
 venv/
+backend/data/
+*.db
+*.sqlite3
 
-# Loglar / derleme çıktıları
+# Node / Next.js
+node_modules/
+.next/
+out/
+npm-debug.log*
+
+# PlatformIO
+firmware/.pio/
+firmware/.vscode/
+
+# Docker
+docker-compose.override.yml
+
+# Loglar / cikti
 *.log
 *.bin
 *.elf
 build/
 dist/
 
-# İşletim sistemi
+# OS
 Thumbs.db
 desktop.ini
 .DS_Store
