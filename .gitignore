@@ -1,0 +1,28 @@
+# PlatformIO
+firmware/.pio/
+firmware/.vscode/
+.pio/
+
+# Kullanıcıya özel gizli ayarlar (asla commit edilmez)
+firmware/src/config.h
+pc-agent/config.json
+*.local
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Loglar / derleme çıktıları
+*.log
+*.bin
+*.elf
+build/
+dist/
+
+# İşletim sistemi
+Thumbs.db
+desktop.ini
+.DS_Store
