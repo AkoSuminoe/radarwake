@@ -100,28 +100,7 @@ Share → **Add to Home Screen** opens it like an app.
 
 ## How it works
 
-```mermaid
-flowchart LR
-    subgraph desk["Desk"]
-        radar["LD2410C<br/>mmWave radar"] -- UART --> esp["ESP32-S3"]
-        esp -- I2C --> oled["OLED"]
-        esp -- "GPIO4 pulse" --> opto["PC817<br/>optocoupler"]
-        opto --> pwr["Motherboard<br/>PWR_SW"]
-    end
-    subgraph server["Home server (Docker)"]
-        api["FastAPI<br/>:8000 dashboard / :8001 devices"]
-        db[("SQLite")]
-        api --- db
-    end
-    subgraph pc["Workstation"]
-        agent["pc-agent<br/>:8765"]
-    end
-    phone["Phone / browser"] -- "HTTP + login" --> api
-    esp -- "presence report<br/>(API key)" --> api
-    api -. "press_power in reply" .-> esp
-    agent -- "heartbeat (HMAC)" --> api
-    api -- "sleep / shutdown (HMAC)" --> agent
-```
+<p align="center"><img src="docs/images/architecture.svg" alt="Architecture: phone, home server, sensor and workstation" width="860"></p>
 
 **Waking the PC.** The ESP32 never listens on a port; commands ride on the reply to its
 regular report.

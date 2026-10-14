@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 430" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M24 0H0V24" fill="none" stroke="#0f1d1c" stroke-width="1"/>
+    </pattern>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#5ce1d0"/>
+    </marker>
+    <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#ffd166"/>
+    </marker>
+    <style>
+      .box { fill: #0b1213; stroke: #1f3a37; stroke-width: 1.5; }
+      .hl { fill: #0b1213; stroke: #2f6b63; stroke-width: 1.5; }
+      .title { fill: #e6f1ef; font-size: 14px; font-weight: 700; letter-spacing: 2px; }
+      .t { fill: #c9d6d4; font-size: 12.5px; }
+      .s { fill: #6f8a87; font-size: 11px; }
+      .lbl { fill: #9fb5b2; font-size: 11px; text-anchor: middle; }
+      .w { fill: none; stroke: #5ce1d0; stroke-width: 2; }
+    </style>
+  </defs>
+  <rect width="980" height="430" fill="#05080a"/>
+  <rect width="980" height="430" fill="url(#grid)"/>
+
+  <!-- phone -->
+  <rect class="box" x="30" y="160" width="160" height="110" rx="14"/>
+  <text class="title" x="50" y="192">PHONE</text>
+  <text class="t" x="50" y="220">dashboard</text>
+  <text class="s" x="50" y="242">home Wi-Fi only</text>
+
+  <!-- server -->
+  <rect class="hl" x="280" y="110" width="230" height="210" rx="14"/>
+  <text class="title" x="300" y="142">HOME SERVER</text>
+  <text class="s" x="300" y="160">Docker · Linux / WSL2</text>
+  <text class="t" x="300" y="192">FastAPI</text>
+  <text class="s" x="300" y="212">:8000 dashboard + API</text>
+  <text class="s" x="300" y="230">:8001 devices</text>
+  <text class="t" x="300" y="262">SQLite</text>
+  <text class="s" x="300" y="282">history · state · commands</text>
+
+  <!-- sensor -->
+  <rect class="box" x="670" y="30" width="280" height="160" rx="14"/>
+  <text class="title" x="690" y="62">SENSOR</text>
+  <text class="s" x="690" y="80">at the desk · USB charger</text>
+  <text class="t" x="690" y="110">ESP32-S3</text>
+  <text class="s" x="690" y="132">LD2410C radar · UART</text>
+  <text class="s" x="690" y="150">OLED · I2C</text>
+  <text class="s" x="690" y="168">last command id in NVS</text>
+  <g opacity="0.8">
+    <path d="M880 120 A20 20 0 0 1 920 120" fill="none" stroke="#5ce1d0" stroke-width="1.5"/>
+    <path d="M865 120 A35 35 0 0 1 935 120" fill="none" stroke="#5ce1d0" stroke-width="1.5" opacity="0.5"/>
+    <circle cx="900" cy="120" r="3.5" fill="#5ce1d0"/>
+  </g>
+
+  <!-- workstation -->
+  <rect class="box" x="670" y="250" width="280" height="150" rx="14"/>
+  <text class="title" x="690" y="282">WORKSTATION</text>
+  <text class="s" x="690" y="300">Windows · Wi-Fi</text>
+  <text class="t" x="690" y="330">pc-agent :8765</text>
+  <text class="s" x="690" y="350">sleep · shutdown · heartbeat</text>
+  <text class="t" x="690" y="380">PWR_SW</text>
+  <text class="s" x="752" y="380">motherboard header</text>
+
+  <!-- phone <-> server -->
+  <path class="w" d="M190 215H278" marker-end="url(#a)"/>
+  <text class="lbl" x="235" y="205">HTTP</text>
+  <text class="lbl" x="235" y="235">login</text>
+
+  <!-- sensor <-> server -->
+  <path class="w" d="M668 135H512" marker-end="url(#a)"/>
+  <text class="lbl" x="590" y="127">presence · API key</text>
+  <path class="w" d="M512 165H668" marker-end="url(#a)" stroke-dasharray="6 5" opacity="0.75"/>
+  <text class="lbl" x="590" y="183">press_power in reply</text>
+
+  <!-- server <-> workstation -->
+  <path class="w" d="M668 275H512" marker-end="url(#a)"/>
+  <text class="lbl" x="590" y="267">heartbeat · HMAC</text>
+  <path class="w" d="M512 305H668" marker-end="url(#a)"/>
+  <text class="lbl" x="590" y="323">sleep / shutdown · HMAC</text>
+
+  <!-- sensor -> power switch -->
+  <path d="M930 192V376H864" fill="none" stroke="#ffd166" stroke-width="2" marker-end="url(#b)"/>
+  <text x="922" y="222" fill="#ffd166" font-size="11" text-anchor="end">PC817</text>
+  <text x="922" y="236" fill="#ffd166" font-size="11" text-anchor="end">300 ms</text>
+</svg>
