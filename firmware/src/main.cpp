@@ -8,6 +8,8 @@
 #include <ld2410.h>
 #include <esp_task_wdt.h>
 
+#include "display.h"
+
 #if __has_include("config.h")
 #include "config.h"
 #else
@@ -15,6 +17,13 @@
 #endif
 
 static const uint32_t WDT_TIMEOUT_S = 30;
+
+#ifndef OLED_SDA_PIN
+#define OLED_SDA_PIN 8
+#endif
+#ifndef OLED_SCL_PIN
+#define OLED_SCL_PIN 9
+#endif
 
 #ifndef LIVE_REPORT_INTERVAL_MS
 #define LIVE_REPORT_INTERVAL_MS 1000
@@ -42,6 +51,8 @@ bool forceReport = true;
 // ayni komutu ikinci kez calistirip acilan PC'yi kapatmamak icin.
 uint32_t lastExecutedCmd = 0;
 uint32_t pendingAck = 0;
+
+char pcState[8] = "?";  // backend cevabindan: on | off | waking
 
 uint32_t pulseEndAt = 0;
 uint32_t ledOffAt = 0;
@@ -154,6 +165,7 @@ void handleResponse(const String& body) {
   JsonDocument doc;
   if (deserializeJson(doc, body)) return;
   if (doc["ack_ok"].as<bool>()) pendingAck = 0;
+  if (const char* pc = doc["pc"]) strlcpy(pcState, pc, sizeof(pcState));
   const char* cmd = doc["command"] | "";
   uint32_t id = doc["id"] | 0;
   if (strcmp(cmd, "press_power") == 0 && id != 0) {
@@ -217,6 +229,7 @@ void setup() {
   lastExecutedCmd = prefs.getUInt("last_cmd", 0);
 
   startRadar();
+  displayBegin(OLED_SDA_PIN, OLED_SCL_PIN);
 
   // Kopma nedeni: 15/204=handshake zaman asimi, 202=auth hatasi, 201=AP yok
   WiFi.onEvent([](WiFiEvent_t, WiFiEventInfo_t info) {
@@ -240,6 +253,19 @@ void loop() {
   }
 
   readRadar();
+
+  DisplayData dd = {
+      WiFi.status() == WL_CONNECTED,
+      WiFi.RSSI(),
+      radar.isConnected(),
+      current.presence,
+      current.moving,
+      (uint16_t)(current.moving ? current.movingDist : current.stationaryDist),
+      (uint8_t)max(current.moving ? current.movingEnergy : 0, current.stationary ? current.stationaryEnergy : 0),
+      pcState,
+      ledOffAt != 0,
+  };
+  displayUpdate(dd);
 
   static uint32_t lastWifiTry = 0;
   if (WiFi.status() != WL_CONNECTED && now - lastWifiTry > 30000) {

@@ -1,205 +1,233 @@
 # radarwake
 
-ESP32-S3 + LD2410C mmWave radar ile varlik algilama, masaustu PC'yi uzaktan acma ve
-uykuya alma sistemi.
+Presence-aware workstation control. An ESP32-S3 with an LD2410C 24 GHz mmWave radar
+detects whether someone is at the desk, reports it to a small backend on a home server,
+and can press the desktop's power button through an optocoupler. A LAN-only, password
+protected dashboard shows a live sonar view and lets you wake, sleep or shut down the PC.
 
-- **Laptop (server, hep acik):** Windows 11 Pro, Docker Desktop (WSL2). Backend ve dashboard
-  tek bir izole container'da calisir. **Sadece ev agindan erisilir**, internete acilmaz.
-- **Masaustu (hedef PC):** acilip kapatilan makine. Aga Wi-Fi ile bagli oldugu icin WOL
-  kullanilmaz; ESP32 anakartin guc tusuna optokuplorla "basar".
-- **ESP32-S3-DevKitC-1 + LD2410C:** masaustunun yaninda, 5V telefon sarjiyla beslenir.
+- **Server (always on):** a laptop running Docker inside WSL2. Backend and dashboard run
+  in a single isolated container, reachable **only from the home network**.
+- **Workstation (target):** the desktop being woken/slept. It is on Wi-Fi, so Wake-on-LAN
+  is not used; the ESP32 presses the motherboard power switch instead.
+- **Sensor node:** ESP32-S3 + LD2410C (+ optional 0.96" OLED) next to the desk, powered by
+  a USB charger.
 
-## Mimari
-
-```
-LD2410C --UART--> ESP32-S3 --WiFi/HTTP :8001--> Backend (laptop, Docker)
-                     |   <-- cevapta "press_power" --     |  SQLite: presence + durum
-                     |                                    |
-                 PC817 optokuplor                         |  HMAC imzali sleep/shutdown
-                     |                                    v
-              anakart PWR_SW  <-- masaustu PC -- pc-agent :8765
-                                       |  heartbeat (30 sn) --> Backend :8001
-                                       
- Telefon/tarayici (ev Wi-Fi'si) --HTTP--> http://192.168.1.146:8000  (sifreli giris)
-```
-
-- **Uyandirma:** dashboard `POST /api/pc/wake` -> backend komutu kuyruga ekler -> ESP32 bir
-  sonraki raporunun cevabinda komutu alir -> GPIO4'u 300 ms tetikler -> PC acilir.
-  ESP'de dinleyen port yoktur.
-- **PC acik mi:** pc-agent'in heartbeat'i 90 saniyeden yeniyse acik sayilir.
-- **Uyutma:** backend pc-agent'a HMAC imzali istek gonderir.
-
-## Donanim baglantisi
-
-**USB:** Kod yuklemek ve seri monitor icin kartin **USB** yazan USB-C portu kullanilir
-(native USB, Windows'ta "USB Serial Device (COMx)" olarak gorunur; firmware buna gore
-derlenir). COM portu CH343 surucusu ister, kullanilmaz.
-Kalici kullanimda kart 5V telefon sarjina takilir. Masaustune takili birakilmaz, cunku
-PC kapaninca USB'deki guc kesilir.
-
-**LD2410C -> ESP32-S3**
-
-| LD2410C | ESP32-S3 | Not |
-|---------|----------|-----|
-| VCC | 5V | radar 5V ister |
-| GND | GND | |
-| TX  | GPIO18 | UART1 RX (capraz) |
-| RX  | GPIO17 | UART1 TX (capraz) |
-| OUT | GPIO5  | dijital varlik, istege bagli |
-
-**PC817 optokuplor -> anakart guc tusu**
+## Architecture
 
 ```
-ESP GPIO4 --[330R]--> PC817 pin1 (anot)
-ESP GND   ----------> PC817 pin2 (katot)
-PC817 pin4 (kollektor) --> anakart PWR_SW +
-PC817 pin3 (emitor)    --> anakart PWR_SW -   (topraga giden pin)
+LD2410C --UART--> ESP32-S3 --Wi-Fi/HTTP :8001--> Backend (server, Docker)
+   OLED <--I2C---/   |   <-- "press_power" in reply --   |  SQLite: history + state
+                     |                                   |
+                 PC817 optocoupler                       |  HMAC-signed sleep/shutdown
+                     |                                   v
+           motherboard PWR_SW  <--  workstation -- pc-agent :8765
+                                         |  heartbeat (30 s) --> Backend :8001
+
+ Phone / browser (home Wi-Fi) --HTTP--> http://<server-ip>:8000   (password login)
 ```
 
-- Kasanin kendi tusu de calissin diye ayni pinlere paralel baglanir.
-- ESP GND'si PC topragina dogrudan baglanmaz, izolasyonu optokuplor saglar.
-- Parca gelene kadar "basma" komutu kartin RGB LED'ini mavi yakar.
-- Alisveris listesi: PC817 (tek basina ya da 1 kanalli modul), 330R direnc, dupont kablolar.
+- **Wake:** dashboard `POST /api/pc/wake` -> backend queues a command -> the ESP32 receives
+  it in the reply to its next report -> pulses GPIO4 for 300 ms -> the PC powers on.
+  The ESP32 never listens on a port.
+- **Is the PC on?** Yes if the pc-agent heartbeat is newer than 90 s.
+- **Sleep / shut down:** the backend sends an HMAC-signed request to the pc-agent.
 
-Kullanilmayacak pinler: 0/3/45/46 (strapping), 19/20 (native USB), 43/44 (COM'un UART0'i),
-35-37 (octal PSRAM).
+## Hardware
 
-## Dizin yapisi
+Board: ESP32-S3 N16R8 DevKitC-style clone (YD-ESP32-S3) with two USB-C ports.
+
+> **Note:** on this board the `5Vin` pin does **not** output 5 V from USB until the
+> `IN-OUT` solder pads next to it are bridged. Bridge them before powering the radar
+> from `5Vin`.
+
+Use the port labelled **USB** (native USB-Serial/JTAG) for flashing and the serial
+monitor; the firmware is built for it. For permanent use, plug the board into a 5 V USB
+charger, not into the workstation (its USB power drops when the PC is off).
+
+**LD2410C radar**
+
+| LD2410C | ESP32-S3 |
+|---------|----------|
+| VCC | 5Vin |
+| GND | GND |
+| TX  | GPIO18 |
+| RX  | GPIO17 |
+| OUT | GPIO5 (optional) |
+
+The firmware scans both pin directions and common baud rates at boot, so swapped TX/RX
+still works.
+
+**0.96" SSD1306 OLED (optional)**
+
+| OLED | ESP32-S3 |
+|------|----------|
+| GND | GND |
+| VDD | 3V3 |
+| SCK | GPIO9 |
+| SDA | GPIO8 |
+
+Shows a mini sonar, range, motion state, signal strength, Wi-Fi bars and PC state. It turns
+off after 5 minutes with nobody around and shifts by a pixel every minute to limit OLED
+burn-in. For 1.3" SH1106 panels, add `#define OLED_SH1106` to `config.h`.
+
+**PC817 optocoupler module -> power switch**
+
+Use a module rated for **3.3 V input** (3-5 V); one channel is enough.
 
 ```
-firmware/     ESP32-S3 (PlatformIO / Arduino)
-backend/      FastAPI servisi (Docker, laptop)
-pc-agent/     masaustunde calisan sleep/shutdown + heartbeat ajani
-frontend/     Next.js dashboard (static export, backend image'ina gomulur)
-docs/         semalar, notlar
+ESP GPIO4 --> module IN
+ESP GND   --> module GND (input side)
+module output (collector) --> motherboard PWR_SW +
+module output (emitter)   --> motherboard PWR_SW -
 ```
 
-## Kurulum
+Wire it in parallel with the case button so that keeps working. The optocoupler keeps
+the ESP32 and the PC electrically isolated. Until it is installed, a wake command only
+lights the board's RGB LED blue.
 
-### 1. Firmware (masaustunde, VS Code + PlatformIO)
+Pins to avoid: 0/3/45/46 (strapping), 19/20 (native USB), 43/44 (UART0), 35-37 (octal PSRAM).
 
-1. `firmware/src/config.example.h` dosyasini `config.h` olarak kopyala. Wi-Fi bilgilerini
-   (2.4 GHz), laptop IP'sini ve `API_KEY`'i doldur.
-2. Karti USB portundan bagla, sonra: `pio run -t upload -t monitor`.
-3. Seri monitorde `[radar] baglandi` ve `[report] ... -> 200` satirlari gorulmeli.
+## Repository layout
 
-### 2. Backend (laptopta)
+```
+firmware/   ESP32-S3 (PlatformIO, Arduino core 2.x)
+backend/    FastAPI service (Docker on the server)
+frontend/   Next.js dashboard (static export, bundled into the backend image)
+pc-agent/   sleep/shutdown + heartbeat agent for the workstation (Windows, stdlib only)
+```
 
-```powershell
+## Setup
+
+### 1. Firmware
+
+1. Copy `firmware/src/config.example.h` to `config.h` and fill in Wi-Fi (2.4 GHz), the
+   server LAN IP and `API_KEY`.
+2. Connect the **USB** port and run `pio run -t upload -t monitor`
+   (if `pio` is not on PATH: `~/.platformio/penv/Scripts/pio`). The first flash may need
+   BOOT held while tapping RST.
+3. Expect `[radar] RX=GPIO18 256000 baud ... <- valid frame` and `[report] ... -> 200`.
+
+### 2. Backend (server)
+
+```bash
 cd backend
-python -m venv .venv; .venv\Scripts\pip install -r requirements.txt
-.venv\Scripts\python scripts\hash_password.py   # cikan satirlari backend\.env'e yaz
-copy .env.example .env                          # kalan alanlari doldur
-cd ..; copy .env.example .env                   # LAN_IP
+python -m venv .venv && .venv/bin/pip install pwdlib[argon2]
+.venv/bin/python scripts/hash_password.py   # prints ADMIN_PASSWORD_HASH and secrets
+cp .env.example .env                        # fill in the values
+cd .. && cp .env.example .env               # LAN_IP=<server LAN IP>
 docker compose up -d --build
 ```
 
-- Windows Firewall'da TCP 8000 ve 8001 portlarini sadece yerel subnet'e ac.
-- Router'da laptop, masaustu ve ESP32 icin DHCP rezervasyonu yap.
+- Ports 8000 (dashboard) and 8001 (ESP32 + agent) are bound to `LAN_IP` only.
+- On WSL2 with native Docker use `networkingMode=mirrored` and allow 8000/8001 from the
+  LAN subnet in both the Hyper-V firewall and Windows Firewall.
+- Reserve DHCP addresses for the server, the workstation and the ESP32.
 
-### 3. PC ajani (masaustunde, yonetici PowerShell)
+### 3. pc-agent (workstation, elevated PowerShell)
 
 ```powershell
 cd pc-agent
 copy config.example.json config.json   # backend_url, secret, allowed_ips
-powershell -ExecutionPolicy Bypass -File .\install.ps1 -LaptopIp 192.168.1.146 -PowerButtonDoNothing -DisableHibernate
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -LaptopIp <server-ip> -PowerButtonDoNothing -DisableHibernate
 ```
 
-- `-PowerButtonDoNothing`: acik PC'ye yanlislikla basma komutu gelse bile PC kapanmaz.
-  Kapali ya da uykudaki PC yine acilir. Kapatmayi Baslat menusunden ya da dashboard'dan yaparsin.
-- `-DisableHibernate`: sleep komutu hazirda bekletme yerine gercek uyku yapar.
-  Fast Startup da kapanir.
-- python.org Python'u "tum kullanicilar icin" kurulmali, cunku ajan SYSTEM olarak calisir.
+- Runs at boot as SYSTEM (before login), restarts on failure, firewall-limited to the server.
+- `-PowerButtonDoNothing`: a stray press on a running PC does nothing; waking from sleep or
+  power-on from off still works because that is handled by the firmware.
+- `-DisableHibernate`: makes "sleep" a real S3 sleep instead of hibernation.
+- Requires python.org Python installed for all users.
 
-### 4. Telefondan erisim
+### 4. Phone
 
-1. Telefon ev Wi-Fi'sine bagliyken `http://192.168.1.146:8000` adresini ac, giris yap.
-2. Safari'de Paylas -> **Ana Ekrana Ekle** dersen uygulama gibi acilir.
-
-Evden disarida calismaz, bu bilincli bir tercih. Ileride disaridan erismek istersen
-en guvenli yol Tailscale'dir: siteyi internete acmadan sadece kendi cihazlarin erisir.
+Open `http://<server-ip>:8000` on the home Wi-Fi and sign in. In Safari, Share -> **Add to
+Home Screen** opens it like an app. It does not work outside the home network by design;
+Tailscale would be the safe way to add remote access later.
 
 ## Dashboard
 
-- Giris: kullanici adi + sifre (argon2 hash, en az 12 karakter). Token **httpOnly cookie**'de
-  tutulur (7 gun), JS erisemez. Login 5 deneme/dakika ile sinirli.
-  Cookie ile gelen POST'lar ayrica `X-Radarwake: 1` header'i ister (CSRF korumasi).
-- **Uyandir** sadece PC kapaliyken, **Uyut / Kapat** sadece PC acikken aktif olur.
-- Oda karti: radar durumu, mesafe ve son 24 saatin varlik zaman cizelgesi.
+- **Presence scan:** a live sonar view (1 s updates while someone is present). The LD2410C
+  measures range, not bearing, so a target is drawn as an arc at the measured distance
+  across the field of view, with a fading echo trail. Range, motion and signal readouts.
+- **Workstation:** online / offline / booting, plus Wake, Sleep and Shut down. Wake is only
+  enabled while the PC is off; Sleep and Shut down only while it is on.
+- **Activity:** occupancy timeline for the last 24 hours.
 
-Gelistirme: `cd frontend; npm install; npm run build` -> `out/`. Yerel test icin `out/`
-klasorunu `backend/static` olarak kopyalayip backend'i `COOKIE_SECURE=false` ile calistir.
+Development: `cd frontend && npm install && npm run build` produces `out/`. For a local run,
+copy it to `backend/static` and start the backend.
 
 ## API
 
-| Endpoint | Port | Yetki | Not |
+| Endpoint | Port | Auth | Notes |
 |---|---|---|---|
-| `POST /api/auth/login` | 8000 | - | JWT doner + httpOnly cookie, rate limit'li |
-| `POST /api/auth/logout` | 8000 | - | cookie'yi siler |
-| `GET  /api/auth/me` | 8000 | JWT | oturum kontrolu |
-| `GET  /api/presence/current` | 8000 | JWT | debounce'lu varlik + sensor durumu |
-| `GET  /api/presence/history?hours=24` | 8000 | JWT | dashboard grafigi |
+| `POST /api/auth/login` | 8000 | - | JWT + httpOnly cookie, rate limited |
+| `POST /api/auth/logout` | 8000 | - | clears the cookie |
+| `GET  /api/auth/me` | 8000 | JWT | session check |
+| `GET  /api/presence/live` | 8000 | JWT | latest radar reading (in memory) |
+| `GET  /api/presence/current` | 8000 | JWT | debounced presence + sensor state |
+| `GET  /api/presence/history?hours=24` | 8000 | JWT | timeline data |
 | `GET  /api/pc/status` | 8000 | JWT | `on` / `off` / `waking` |
-| `POST /api/pc/wake` | 8000 | JWT | sadece PC kapaliyken; aciksa 409 |
+| `POST /api/pc/wake` | 8000 | JWT | only while off; 409 otherwise |
 | `POST /api/pc/sleep` | 8000 | JWT | `{"action":"sleep"\|"shutdown"}` |
-| `POST /api/presence` | 8001 | `X-API-Key` | ESP32 raporu, cevapta komut |
+| `POST /api/presence` | 8001 | `X-API-Key` | ESP32 report; reply carries commands + PC state |
 | `POST /api/pc/heartbeat` | 8001 | HMAC | pc-agent |
-| `GET  /api/health` | ikisi | - | healthcheck |
+| `GET  /api/health` | both | - | healthcheck |
 
-Her route sadece kendi portundan kabul edilir, diger porttan 404 doner.
+Each route is only served on its own port; the other port returns 404.
 
-## Guvenlik kararlari (ve nedenleri)
+## Security decisions
 
-- **Hicbir yetkisiz endpoint guc islemi tetikleyemez.** Durum degistiren her endpoint
-  JWT, API key ya da HMAC imzasi ister.
-- **Acik PC'ye basma komutu gonderilmez.** Heartbeat varken ya da bir basma isleniyorken
-  wake 409 doner. ESP32 son calistirdigi komut id'sini NVS'te saklar ve tekrar gelen
-  komutu ikinci kez calistirmaz. Darbe 300 ms'dir, 5 saniyelik zorla kapatma riski yoktur.
-- **ESP32 -> backend ucu tokenli.** Sahte varlik verisi otomatik uyku/uyandirma mantigini
-  kandirabilir.
-- **Internete acik hicbir sey yok.** Iki port da sadece laptopun LAN IP'sine publish edilir
-  (Tailscale ve diger arayuzlerden erisilemez). Tunnel/port yonlendirme kullanilmaz.
-- **Host kontrolu.** Sadece `ALLOWED_HOSTS` icindeki adreslerle gelen istekler kabul edilir
-  (DNS rebinding'e karsi). Rate limit proxy header'larina guvenmez.
-- **Duz HTTP, bilincli tercih.** Trafik ev Wi-Fi'sinin WPA2 sifrelemesi icinde kalir.
-  HTTPS istenirse ileride yerel sertifika eklenebilir (`COOKIE_SECURE=true`).
-- **pc-agent komutlari HMAC imzali.** ±30 saniye zaman penceresi ve nonce ile replay
-  engellenir. Firewall kurali sadece laptop IP'sine izin verir.
-- **Rate limiting** login ve presence uclarinda var.
-- **Docker izolasyonu:** container read-only, `cap_drop: ALL`, `no-new-privileges`, root
-  olmayan kullanici ile calisir.
-- **Parolalar argon2 ile hash'lenir.** Secret'lar repoya girmez (`.env`, `config.h`,
-  `config.json` gitignore'da).
-- **Otomatik uyku ve uyandirma varsayilan olarak kapali** (`AUTO_SLEEP_ENABLED`,
-  `AUTO_WAKE_ENABLED`). Manuel test bittikten sonra acilir.
+- **No unauthenticated endpoint can trigger a power action.** Every state-changing route
+  requires a JWT, an API key or an HMAC signature.
+- **Nothing is exposed to the internet.** Both ports are bound to the server's LAN IP;
+  no tunnel or port forwarding. The Tailscale interface is excluded as well.
+- **Host header allow-list** (`ALLOWED_HOSTS`) against DNS rebinding. Rate limiting uses the
+  socket address and ignores forwarding headers.
+- **A running PC never gets a power-button press.** Wake returns 409 while a heartbeat is
+  present or a press is in flight. The ESP32 stores the last executed command id in NVS so
+  a resend after a reboot is never executed twice. The pulse is 300 ms, far from a 5 s
+  forced power-off.
+- **The ESP32 endpoint is authenticated**, because fake presence data could drive the
+  automatic sleep/wake logic.
+- **pc-agent commands are HMAC-signed** with a ±30 s window and a nonce cache against replay,
+  and the agent's firewall rule only admits the server.
+- **Dashboard session:** argon2-hashed password (min. 12 characters), JWT in an httpOnly,
+  SameSite=Strict cookie, plus a required `X-Radarwake` header on cookie-authenticated POSTs.
+- **Plain HTTP on the LAN is a deliberate trade-off.** Traffic stays inside the WPA2-encrypted
+  home Wi-Fi; HTTPS with a local certificate can be added later (`COOKIE_SECURE=true`).
+- **Container hardening:** read-only filesystem, `cap_drop: ALL`, `no-new-privileges`,
+  non-root user.
+- **Secrets never enter the repo** (`.env`, `config.h` and `config.json` are git-ignored).
+- **Automatic sleep and wake are off by default** (`AUTO_SLEEP_ENABLED`, `AUTO_WAKE_ENABLED`);
+  enable them after manual testing.
 
-## Yol haritasi
+## Roadmap
 
-1. ~~Backend: auth, SQLite, Docker Compose, guc komut kuyrugu~~
-2. ~~ESP32 firmware: LD2410C okuma, API key ile rapor, guc tusu darbesi~~
-3. ~~PC ajani: heartbeat, imzali sleep/shutdown~~
-4. Optokuplor montaji ve uctan uca test
-5. ~~Dashboard: login, durum, uyandir/uyut/kapat, 24 saatlik zaman cizelgesi~~
-6. Laptopta deploy (sadece LAN)
-7. (Faz 2) Telefondan BLE ile dogrudan kontrol
+1. ~~Backend: auth, SQLite, Docker Compose, power command queue~~
+2. ~~Firmware: LD2410C, authenticated reports, power button pulse~~
+3. ~~pc-agent: heartbeat, signed sleep/shutdown~~
+4. ~~Dashboard: live sonar, workstation controls, 24 h activity~~
+5. ~~LAN-only deployment on the server~~
+6. Optocoupler install and end-to-end wake test
+7. Radar tuning (gates, sensitivity) and LD2410C engineering mode for per-zone detection
+   (desk vs. bed)
+8. Phone control over BLE directly to the ESP32
 
-## Gelistirme
+## Development
 
-```powershell
+```bash
 cd backend
-.venv\Scripts\pip install -r requirements-dev.txt
-.venv\Scripts\python -m pytest -q
+pip install -r requirements-dev.txt
+python -m pytest -q
 ```
 
-## Bagimliliklar
+## Dependencies
 
-- **Firmware:** `ncmreynolds/ld2410`, `bblanchon/ArduinoJson`. WiFi, HTTPClient ve
-  Preferences ESP32 core ile gelir.
+- **Firmware:** `ncmreynolds/ld2410`, `bblanchon/ArduinoJson`, `olikraus/U8g2`.
 - **Backend (Python 3.12):** `fastapi`, `uvicorn`, `sqlalchemy`, `pydantic-settings`,
   `PyJWT`, `pwdlib[argon2]`, `httpx`.
-- **pc-agent:** sadece Python stdlib.
-- **VS Code:** `.vscode/extensions.json` icindeki eklentiler.
+- **Dashboard:** Next.js 15, React 19 (static export).
+- **pc-agent:** Python standard library only.
 
-## Lisans
+## License
 
 MIT

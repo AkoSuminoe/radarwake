@@ -15,6 +15,9 @@
 #define RADAR_OUT_PIN 5           // LD2410C OUT (dijital varlik)
 #define POWER_BTN_PIN 4           // PC817 anot (330R uzerinden)
 #define RGB_LED_PIN   48          // dahili WS2812 (bazi kartlarda 38)
+#define OLED_SDA_PIN  8           // 0.96" SSD1306 OLED (I2C)
+#define OLED_SCL_PIN  9
+// #define OLED_SH1106             // 1.3" SH1106 ekranlar icin ac
 
 // --- Zamanlama ---
 #define REPORT_INTERVAL_MS  10000 // bos odada / degisiklik yoksa heartbeat raporu

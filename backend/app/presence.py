@@ -39,6 +39,7 @@ class PresenceIn(BaseModel):
 
 class PresenceOut(BaseModel):
     ack_ok: bool = False
+    pc: str = "off"  # on | off | waking (ESP ekraninda gosterilir)
     command: str | None = None
     id: int | None = None
 
@@ -97,6 +98,7 @@ def ingest(body: PresenceIn, request: Request, background: BackgroundTasks, db: 
         out.ack_ok = True  # bilinmeyen id'yi de onayla, ESP tekrar denemeyi birakir
 
     current = pc_state(db, settings, now)
+    out.pc = current
 
     if settings.auto_wake_enabled and body.presence and current == "off":
         last_auto = db.scalars(

@@ -109,8 +109,10 @@ def test_heartbeat_replay_rejected(ingest):
 
 def test_status_follows_heartbeat(api, ingest, token):
     assert api.get("/api/pc/status", headers=token).json()["state"] == "off"
+    assert report(ingest).json()["pc"] == "off"
     heartbeat(ingest)
     assert api.get("/api/pc/status", headers=token).json()["state"] == "on"
+    assert report(ingest).json()["pc"] == "on"
 
 
 # --- wake akisi ---
@@ -130,7 +132,7 @@ def test_wake_command_flow(api, ingest, token):
     assert api.get("/api/pc/status", headers=token).json()["state"] == "waking"
 
     out = report(ingest).json()
-    assert out == {"ack_ok": False, "command": "press_power", "id": cmd_id}
+    assert out == {"ack_ok": False, "pc": "waking", "command": "press_power", "id": cmd_id}
 
     out = report(ingest, ack=cmd_id).json()
     assert out["ack_ok"] is True and out["command"] is None
