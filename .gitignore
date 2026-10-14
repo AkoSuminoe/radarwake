@@ -39,3 +39,8 @@ dist/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# Yerel dashboard testi
+backend/static/
+frontend/next-env.d.ts
+*.tsbuildinfo

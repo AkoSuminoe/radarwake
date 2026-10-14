@@ -1,0 +1,8 @@
+{
+  "backend_url": "http://192.168.1.146:8001",
+  "secret": "backend .env PC_AGENT_SECRET ile ayni",
+  "listen_host": "0.0.0.0",
+  "listen_port": 8765,
+  "allowed_ips": ["192.168.1.146"],
+  "heartbeat_interval_s": 30
+}

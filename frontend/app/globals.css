@@ -1,0 +1,237 @@
+:root {
+  --bg: #0d1117;
+  --card: #161b22;
+  --border: #30363d;
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --primary: #2f81f7;
+  --on: #3fb950;
+  --off: #6e7681;
+  --waking: #d29922;
+  --danger: #f85149;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.shell {
+  max-width: 480px;
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: max(16px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+h1 {
+  font-size: 1.25rem;
+  margin: 0;
+  letter-spacing: 0.02em;
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 18px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.label {
+  font-weight: 600;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 0.875rem;
+  margin: 8px 0 0;
+  min-height: 1.2em;
+}
+
+.pill {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+.pill.on {
+  color: var(--on);
+}
+.pill.off,
+.pill.unknown {
+  color: var(--off);
+}
+.pill.waking {
+  color: var(--waking);
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.btn {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: #21262d;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  padding: 14px 8px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: transform 120ms ease, opacity 120ms ease;
+}
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.btn.primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+.btn.danger {
+  color: var(--danger);
+}
+
+.link {
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+  padding: 8px;
+}
+
+.login {
+  margin-top: 15vh;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.login label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+.login input {
+  font: inherit;
+  font-size: 16px; /* iOS zoom yapmasin */
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+}
+.login input:focus {
+  outline: 2px solid var(--primary);
+  outline-offset: -1px;
+}
+
+.error {
+  color: var(--danger);
+  font-size: 0.875rem;
+  margin: 0;
+}
+
+.banner {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(210, 153, 34, 0.12);
+  color: var(--waking);
+  font-size: 0.875rem;
+}
+
+.timeline {
+  margin-top: 16px;
+}
+.bar {
+  position: relative;
+  height: 14px;
+  border-radius: 7px;
+  background: #21262d;
+  overflow: hidden;
+}
+.bar span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 2px;
+  background: var(--on);
+}
+.ticks {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-top: 6px;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: max(24px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  background: #21262d;
+  border: 1px solid var(--border);
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-size: 0.875rem;
+  max-width: calc(100% - 32px);
+  animation: toast-in 180ms ease-out;
+}
+.toast.error {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
+  .btn {
+    transition: none;
+  }
+}

@@ -1,1 +1,7 @@
-# TODO: fastapi, uvicorn, sqlalchemy, python-jose, passlib[argon2], wakeonlan, slowapi
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+sqlalchemy==2.0.43
+pydantic-settings==2.7.1
+PyJWT==2.10.1
+pwdlib[argon2]==0.2.1
+httpx==0.28.1

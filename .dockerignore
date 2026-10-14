@@ -1,0 +1,13 @@
+**/.git
+**/node_modules
+**/.next
+frontend/out
+**/.venv
+**/__pycache__
+**/.env
+**/*.db
+backend/data
+backend/static
+firmware
+pc-agent
+docs

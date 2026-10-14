@@ -1,1 +1,31 @@
-# TODO: docker-compose (backend + frontend, izole network)
+# Laptopta (server) calisir:  docker compose up -d --build
+# Kok dizindeki .env sadece compose degiskenleri icin (LAN_IP);
+# uygulama ayarlari backend/.env icinde.
+#
+# Servis sadece ev agindan erisilir: portlar laptopun LAN IP'sine baglanir,
+# Tailscale/diger arayuzlerden ve internetten erisilemez.
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: radarwake-backend
+    restart: unless-stopped
+    env_file: ./backend/.env
+    environment:
+      DATABASE_URL: sqlite:////app/data/presence.db
+    ports:
+      - "${LAN_IP:?root .env icinde LAN_IP ayarla}:8000:8000"   # dashboard (telefon/tarayici)
+      - "${LAN_IP}:8001:8001"                                   # ESP32 + pc-agent
+    volumes:
+      - radarwake-data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  radarwake-data:
