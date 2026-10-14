@@ -73,29 +73,53 @@ void connectWifi() {
   }
 }
 
-// Radar surekli veri yollar (~10 Hz). Iki pin yonunu de dener: TX/RX ters takildiysa
-// kablo degistirmeye gerek kalmaz. Hic bayt gelmiyorsa sorun guc/kablodur.
+// Radar surekli veri yollar (~10 Hz). Pin yonunu ve baud hizini tarar: TX/RX ters
+// takildiysa ya da radar fabrika disi bir hiza ayarliysa da baglanir.
+// Gecerli cerceve basliklari: veri F4 F3 F2 F1, komut cevabi FD FC FB FA.
+static bool hasFrameHeader(const uint8_t* buf, int n) {
+  for (int i = 0; i + 3 < n; i++) {
+    if ((buf[i] == 0xF4 && buf[i + 1] == 0xF3 && buf[i + 2] == 0xF2 && buf[i + 3] == 0xF1) ||
+        (buf[i] == 0xFD && buf[i + 1] == 0xFC && buf[i + 2] == 0xFB && buf[i + 3] == 0xFA))
+      return true;
+  }
+  return false;
+}
+
 void startRadar() {
   const int pins[2][2] = {{RADAR_RX_PIN, RADAR_TX_PIN}, {RADAR_TX_PIN, RADAR_RX_PIN}};
+  const uint32_t bauds[] = {256000, 115200, 230400, 460800, 57600, 38400, 19200, 9600};
+  static uint8_t buf[256];
   Serial1.setRxBufferSize(1024);
   for (auto& p : pins) {
-    Serial1.begin(256000, SERIAL_8N1, p[0], p[1]);
-    delay(50);
-    while (Serial1.available()) Serial1.read();
-    delay(1000);
-    int bytes = Serial1.available();
-    Serial.printf("[radar] RX=GPIO%d TX=GPIO%d: 1 sn'de %d bayt\n", p[0], p[1], bytes);
-    if (bytes > 0 && radar.begin(Serial1)) {
-      Serial.printf("[radar] baglandi, firmware %u.%u.%x\n", radar.firmware_major_version,
-                    radar.firmware_minor_version, radar.firmware_bugfix_version);
-      return;
+    for (uint32_t baud : bauds) {
+      Serial1.begin(baud, SERIAL_8N1, p[0], p[1]);
+      delay(30);
+      while (Serial1.available()) Serial1.read();
+      delay(400);
+      int n = 0;
+      while (Serial1.available() && n < (int)sizeof(buf)) buf[n++] = Serial1.read();
+      bool ok = hasFrameHeader(buf, n);
+      Serial.printf("[radar] RX=GPIO%d %6u baud: %3d bayt%s\n", p[0], baud, n, ok ? "  <- gecerli cerceve" : "");
+      esp_task_wdt_reset();
+      if (ok) {
+        if (radar.begin(Serial1)) {
+          Serial.printf("[radar] baglandi, firmware %u.%u.%x\n", radar.firmware_major_version,
+                        radar.firmware_minor_version, radar.firmware_bugfix_version);
+        } else {
+          // Veri geliyor ama komutlara cevap yok: ESP TX -> radar RX kablosu temassiz olabilir.
+          // Okuma yine calisir, sadece ayar komutlari gonderilemez.
+          radar.begin(Serial1, false);
+          Serial.println("[radar] veri geliyor ama komut cevabi yok: radar RX kablosunu kontrol et");
+        }
+        return;
+      }
+      Serial1.end();
+      if (n == 0) break;  // bu pinde hic sinyal yok, diger baud'lari deneme
     }
-    Serial1.end();
   }
-  Serial.println("[radar] cevap yok: VCC->5V, GND->G ve TX/RX kablolarini kontrol et");
+  Serial.println("[radar] gecerli veri yok: VCC->5V, GND->GND ve TX/RX kablolarini kontrol et");
   Serial1.begin(256000, SERIAL_8N1, RADAR_RX_PIN, RADAR_TX_PIN);
   // Kutuphane stream'i begin() icinde atar; cagrilmazsa read() null'a erisip coker.
-  // Radar sonradan baglanirsa da veri okunmaya baslar.
   radar.begin(Serial1, false);
 }
 
