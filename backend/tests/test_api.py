@@ -225,3 +225,24 @@ def test_unknown_host_rejected(settings):
     app = create_app(settings)
     assert TestClient(app, base_url="http://evil.example:8000").get("/api/health").status_code == 400
     assert TestClient(app, base_url="http://192.168.1.146:8000").get("/api/health").status_code == 200
+
+
+# --- canli okuma ---
+
+def test_live_reading(api, ingest, token):
+    assert api.get("/api/presence/live", headers=token).json() is None
+    report(ingest, presence=True, moving=True, moving_dist=82, moving_energy=64, rssi=-50)
+    live = api.get("/api/presence/live", headers=token).json()
+    assert live["moving_dist"] == 82 and live["moving_energy"] == 64 and live["rssi"] == -50
+    assert live["age_s"] < 5
+    api.cookies.clear()  # login cookie'si olmadan
+    assert api.get("/api/presence/live").status_code == 401
+
+
+def test_history_throttled(api, ingest, token):
+    for d in (50, 55, 60):
+        report(ingest, presence=True, stationary=True, stationary_dist=d)
+    report(ingest, presence=False)  # durum degisimi her zaman yazilir
+    hist = api.get("/api/presence/history", headers=token).json()
+    assert [h["presence"] for h in hist] == [True, False]
+    assert api.get("/api/presence/live", headers=token).json()["presence"] is False

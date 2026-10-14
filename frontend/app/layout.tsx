@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "radarwake",
-  description: "Masaustu PC'yi uzaktan ac, uyut, kapat",
+  description: "Presence radar and workstation control",
   manifest: "/manifest.webmanifest",
   appleWebApp: { capable: true, title: "radarwake", statusBarStyle: "black-translucent" },
   robots: { index: false, follow: false },
@@ -12,12 +12,12 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#0d1117",
+  themeColor: "#05080a",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="tr">
+    <html lang="en">
       <body>{children}</body>
     </html>
   );

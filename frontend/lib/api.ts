@@ -1,5 +1,5 @@
-// Backend ile ayni origin. Token httpOnly cookie'de; JS ona erismez.
-// X-Radarwake header'i backend'in cookie ile gelen POST'larda aradigi CSRF korumasi.
+// Same origin as the backend. The token lives in an httpOnly cookie (not readable from JS).
+// X-Radarwake is the CSRF header the backend requires on cookie-authenticated POSTs.
 
 export class ApiError extends Error {
   constructor(
@@ -46,6 +46,20 @@ export interface PresenceCurrent {
   last_report_at: string | null;
 }
 
+export interface LiveReading {
+  ts: string;
+  presence: boolean;
+  moving: boolean;
+  stationary: boolean;
+  moving_dist: number;
+  stationary_dist: number;
+  moving_energy: number;
+  stationary_energy: number;
+  radar_ok: boolean;
+  rssi: number | null;
+  age_s: number;
+}
+
 export interface PresenceEvent {
   ts: string;
   presence: boolean;
@@ -58,6 +72,7 @@ export const api = {
   logout: () => request("/api/auth/logout", { method: "POST" }),
   status: () => request<PcStatus>("/api/pc/status"),
   presence: () => request<PresenceCurrent>("/api/presence/current"),
+  live: () => request<LiveReading | null>("/api/presence/live"),
   history: (hours = 24) => request<PresenceEvent[]>(`/api/presence/history?hours=${hours}`),
   wake: () => request<{ command_id: number }>("/api/pc/wake", { method: "POST" }),
   sleep: (action: "sleep" | "shutdown") =>
@@ -65,15 +80,15 @@ export const api = {
 };
 
 const MESSAGES: Record<string, string> = {
-  "invalid credentials": "Kullanıcı adı veya şifre yanlış",
-  "too many requests": "Çok fazla deneme, biraz bekle",
-  "pc already on": "PC zaten açık",
-  "wake already in progress": "PC zaten açılıyor",
-  "pc is not on": "PC açık değil",
-  "pc-agent unreachable": "PC ajanına ulaşılamadı",
+  "invalid credentials": "Invalid username or password",
+  "too many requests": "Too many attempts. Try again in a minute",
+  "pc already on": "Workstation is already online",
+  "wake already in progress": "Workstation is already booting",
+  "pc is not on": "Workstation is not online",
+  "pc-agent unreachable": "Workstation agent is unreachable",
 };
 
 export function errorText(err: unknown): string {
   if (err instanceof ApiError) return MESSAGES[err.message] ?? `${err.message} (${err.status})`;
-  return "Bağlantı hatası";
+  return "Connection error";
 }

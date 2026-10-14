@@ -1,12 +1,15 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
-import { ApiError, PcStatus, PresenceCurrent, PresenceEvent, api, errorText } from "@/lib/api";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { ApiError, LiveReading, PcStatus, PresenceCurrent, PresenceEvent, api, errorText } from "@/lib/api";
+import { Echo, Sonar } from "./sonar";
 
 type Auth = "loading" | "out" | "in";
 
-const POLL_MS = 5000;
+const LIVE_POLL_MS = 1000;
+const STATUS_POLL_MS = 5000;
 const HISTORY_POLL_MS = 60000;
+const LIVE_STALE_S = 6;
 
 export default function Home() {
   const [auth, setAuth] = useState<Auth>("loading");
@@ -44,15 +47,21 @@ function Login({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <main className="shell">
-      <form className="card login" onSubmit={submit}>
-        <h1>radarwake</h1>
+    <main className="shell login-shell">
+      <form className="panel login" onSubmit={submit}>
+        <div className="login-mark" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </div>
+        <h1 className="wordmark">radarwake</h1>
+        <p className="eyebrow center">Restricted · Local network only</p>
         <label>
-          Kullanıcı adı
+          <span className="eyebrow">Username</span>
           <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" required />
         </label>
         <label>
-          Şifre
+          <span className="eyebrow">Password</span>
           <input
             type="password"
             value={password}
@@ -63,52 +72,85 @@ function Login({ onDone }: { onDone: () => void }) {
         </label>
         {error && <p className="error">{error}</p>}
         <button className="btn primary" disabled={busy}>
-          {busy ? "Giriş yapılıyor…" : "Giriş yap"}
+          {busy ? "Authenticating…" : "Sign in"}
         </button>
       </form>
     </main>
   );
 }
 
-const STATE_LABEL: Record<PcStatus["state"], string> = { on: "Açık", off: "Kapalı / uykuda", waking: "Açılıyor…" };
+const PC_LABEL: Record<PcStatus["state"], string> = { on: "Online", off: "Offline", waking: "Booting" };
 
 function Dashboard({ onLogout }: { onLogout: () => void }) {
   const [status, setStatus] = useState<PcStatus | null>(null);
   const [presence, setPresence] = useState<PresenceCurrent | null>(null);
+  const [live, setLive] = useState<LiveReading | null>(null);
+  const [echoes, setEchoes] = useState<Echo[]>([]);
   const [history, setHistory] = useState<PresenceEvent[]>([]);
   const [toast, setToast] = useState<{ text: string; error: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [offline, setOffline] = useState(false);
+  const lastLiveTs = useRef<string | null>(null);
 
-  const refresh = useCallback(async () => {
+  const handleError = useCallback(
+    (err: unknown) => {
+      if (err instanceof ApiError && err.status === 401) onLogout();
+      else setOffline(true);
+    },
+    [onLogout],
+  );
+
+  const refreshStatus = useCallback(async () => {
     try {
       const [s, p] = await Promise.all([api.status(), api.presence()]);
       setStatus(s);
       setPresence(p);
       setOffline(false);
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) onLogout();
-      else setOffline(true);
+      handleError(err);
     }
-  }, [onLogout]);
+  }, [handleError]);
+
+  const refreshLive = useCallback(async () => {
+    try {
+      const l = await api.live();
+      setLive(l);
+      setOffline(false);
+      if (l && l.ts !== lastLiveTs.current && l.presence) {
+        lastLiveTs.current = l.ts;
+        const dist = l.moving ? l.moving_dist : l.stationary_dist;
+        if (dist > 0) setEchoes((prev) => [...prev.slice(-40), { t: Date.now(), dist, moving: l.moving }]);
+      }
+    } catch (err) {
+      handleError(err);
+    }
+  }, [handleError]);
 
   const refreshHistory = useCallback(() => {
     api.history(24).then(setHistory).catch(() => {});
   }, []);
 
   useEffect(() => {
-    refresh();
+    refreshStatus();
+    refreshLive();
     refreshHistory();
-    const a = setInterval(refresh, POLL_MS);
-    const b = setInterval(refreshHistory, HISTORY_POLL_MS);
-    const onVisible = () => document.visibilityState === "visible" && refresh();
+    const timers = [
+      setInterval(() => document.visibilityState === "visible" && refreshLive(), LIVE_POLL_MS),
+      setInterval(() => document.visibilityState === "visible" && refreshStatus(), STATUS_POLL_MS),
+      setInterval(refreshHistory, HISTORY_POLL_MS),
+    ];
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        refreshStatus();
+        refreshLive();
+      }
+    };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
-      clearInterval(a);
-      clearInterval(b);
+      timers.forEach(clearInterval);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [refresh, refreshHistory]);
+  }, [refreshStatus, refreshLive, refreshHistory]);
 
   useEffect(() => {
     if (!toast) return;
@@ -122,7 +164,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
     try {
       await fn();
       setToast({ text: label, error: false });
-      await refresh();
+      await refreshStatus();
     } catch (err) {
       setToast({ text: errorText(err), error: true });
     } finally {
@@ -135,75 +177,104 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
     onLogout();
   }
 
+  const fresh = !!live && live.age_s < LIVE_STALE_S;
+  const sensorDown = !live || live.age_s > 60 || !live.radar_ok;
+  const contact = fresh && live.presence;
+  const sonarStatus = sensorDown ? "offline" : contact ? "live" : "idle";
+  const movingDist = contact && live.moving && live.moving_dist > 0 ? live.moving_dist : null;
+  const stillDist = contact && live.stationary && live.stationary_dist > 0 ? live.stationary_dist : null;
+  const range = movingDist ?? stillDist;
+  const energy = contact ? Math.max(live.moving ? live.moving_energy : 0, live.stationary ? live.stationary_energy : 0) : 0;
   const state = status?.state;
 
   return (
     <main className="shell">
       <header className="top">
-        <h1>radarwake</h1>
-        <button className="link" onClick={logout}>
-          Çıkış
-        </button>
+        <span className="wordmark">radarwake</span>
+        <div className="top-right">
+          <span className={`link-dot ${offline ? "down" : fresh ? "up" : "idle"}`} />
+          <span className="eyebrow">{offline ? "No link" : fresh ? "Live" : "Standby"}</span>
+          <button className="ghost" onClick={logout}>
+            Sign out
+          </button>
+        </div>
       </header>
 
-      {offline && <p className="banner">Sunucuya ulaşılamıyor, tekrar deneniyor…</p>}
+      {offline && <p className="banner">Server unreachable. Retrying…</p>}
 
-      <section className="card">
-        <div className="row">
-          <span className="label">Masaüstü PC</span>
-          <span className={`pill ${state ?? "unknown"}`}>{state ? STATE_LABEL[state] : "…"}</span>
+      <section className="panel scope">
+        <div className="panel-head">
+          <span className="eyebrow">Presence scan</span>
+          <span className={`chip ${sensorDown ? "warn" : contact ? "on" : "off"}`}>
+            {sensorDown ? "Sensor offline" : contact ? "Contact" : presence?.present ? "Recently seen" : "Clear"}
+          </span>
         </div>
-        <p className="muted">
-          {status?.last_heartbeat_at ? `Son sinyal: ${ago(status.last_heartbeat_at)}` : "PC ajanından henüz sinyal yok"}
+        <Sonar movingDist={movingDist} stationaryDist={stillDist} echoes={echoes} status={sonarStatus} />
+        <div className="readouts">
+          <Readout label="Range" value={range !== null ? (range / 100).toFixed(2) : "—"} unit={range !== null ? "m" : ""} />
+          <Readout label="Motion" value={!contact ? "—" : live.moving ? "Moving" : "Still"} />
+          <div className="readout">
+            <span className="eyebrow">Signal</span>
+            <span className="value mono">
+              {contact ? energy : "—"}
+              {contact && <small>%</small>}
+            </span>
+            <span className="meter">
+              <span style={{ width: `${energy}%` }} />
+            </span>
+          </div>
+        </div>
+        <p className="footnote">
+          {sensorDown
+            ? live && !live.radar_ok
+              ? "The ESP32 is online but receives no data from the radar. Check its wiring."
+              : "No reports from the ESP32. Check its power and Wi-Fi."
+            : presence?.last_present_at
+              ? `Last contact ${ago(presence.last_present_at)}`
+              : "Waiting for first contact"}
         </p>
+      </section>
 
+      <section className="panel">
+        <div className="panel-head">
+          <span className="eyebrow">Workstation</span>
+          <span className={`chip ${state ?? "off"}`}>{state ? PC_LABEL[state] : "…"}</span>
+        </div>
+        <p className="footnote">
+          {status?.last_heartbeat_at ? `Heartbeat ${ago(status.last_heartbeat_at)}` : "No heartbeat from the agent yet"}
+        </p>
         <div className="actions">
           <button
             className="btn primary"
             disabled={busy || state !== "off"}
-            onClick={() => run("Uyandırma komutu gönderildi", api.wake)}
+            onClick={() => run("Wake signal sent", api.wake)}
           >
-            Uyandır
+            Wake
           </button>
           <button
             className="btn"
             disabled={busy || state !== "on"}
-            onClick={() => run("Uyku komutu gönderildi", () => api.sleep("sleep"))}
+            onClick={() => run("Sleep command sent", () => api.sleep("sleep"))}
           >
-            Uyut
+            Sleep
           </button>
           <button
             className="btn danger"
             disabled={busy || state !== "on"}
             onClick={() =>
-              run("Kapatma komutu gönderildi", () => api.sleep("shutdown"), "PC kapatılsın mı? Açık işler kaybolabilir.")
+              run("Shutdown command sent", () => api.sleep("shutdown"), "Shut down the workstation? Unsaved work may be lost.")
             }
           >
-            Kapat
+            Shut down
           </button>
         </div>
       </section>
 
-      <section className="card">
-        <div className="row">
-          <span className="label">Oda</span>
-          <span className={`pill ${presence?.present ? "on" : radarDown(presence) ? "waking" : "off"}`}>
-            {!presence ? "…" : radarDown(presence) ? "Radar yok" : presence.present ? "Biri var" : "Boş"}
-          </span>
+      <section className="panel">
+        <div className="panel-head">
+          <span className="eyebrow">Activity · 24h</span>
+          <span className="eyebrow dim">{occupancy(history)}</span>
         </div>
-        <p className="muted">
-          {!presence
-            ? ""
-            : !presence.sensor_online
-              ? "ESP çevrimdışı (elektrik veya Wi-Fi?)"
-              : presence.radar_ok === false
-                ? "Radar bağlı değil: ESP radardan veri alamıyor (kabloları kontrol et)"
-                : presence.raw_presence
-                ? `Algılanan mesafe: ${Math.max(presence.moving_dist ?? 0, presence.stationary_dist ?? 0)} cm`
-                : presence.last_present_at
-                  ? `Son görülme: ${ago(presence.last_present_at)}`
-                  : "Henüz kimse algılanmadı"}
-        </p>
         <Timeline events={history} />
       </section>
 
@@ -212,50 +283,74 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
   );
 }
 
-// Son 24 saatte varlik algilanan araliklar. Iki rapor arasi 2 dakikadan uzunsa
-// (sensor kapali) o aralik bos sayilir.
+function Readout({ label, value, unit }: { label: string; value: string; unit?: string }) {
+  return (
+    <div className="readout">
+      <span className="eyebrow">{label}</span>
+      <span className="value mono">
+        {value}
+        {unit && <small>{unit}</small>}
+      </span>
+    </div>
+  );
+}
+
+const MAX_GAP = 2 * 60 * 1000;
+
+// Intervals with presence in the last 24 h. A gap longer than 2 minutes between
+// reports (sensor off) counts as empty.
+function segments(events: PresenceEvent[], start: number, end: number): [number, number][] {
+  const out: [number, number][] = [];
+  for (let i = 0; i < events.length; i++) {
+    if (!events[i].presence) continue;
+    const a = Math.max(Date.parse(events[i].ts), start);
+    const next = i + 1 < events.length ? Date.parse(events[i + 1].ts) : end;
+    const b = Math.min(next, a + MAX_GAP, end);
+    const last = out[out.length - 1];
+    if (last && a - last[1] < 1000) last[1] = b;
+    else out.push([a, b]);
+  }
+  return out;
+}
+
+function occupancy(events: PresenceEvent[]): string {
+  const end = Date.now();
+  const ms = segments(events, end - 86400000, end).reduce((sum, [a, b]) => sum + (b - a), 0);
+  const h = Math.floor(ms / 3600000);
+  const m = Math.round((ms % 3600000) / 60000);
+  return `${h}h ${m}m occupied`;
+}
+
 function Timeline({ events }: { events: PresenceEvent[] }) {
   const end = Date.now();
   const start = end - 24 * 3600 * 1000;
-  const MAX_GAP = 2 * 60 * 1000;
-  const segments: [number, number][] = [];
-
-  for (let i = 0; i < events.length; i++) {
-    if (!events[i].presence) continue;
-    const a = Date.parse(events[i].ts);
-    const next = i + 1 < events.length ? Date.parse(events[i + 1].ts) : end;
-    const b = Math.min(next, a + MAX_GAP);
-    const last = segments[segments.length - 1];
-    if (last && a - last[1] < 1000) last[1] = b;
-    else segments.push([a, b]);
-  }
-
-  const pct = (t: number) => `${(((t - start) / (end - start)) * 100).toFixed(3)}%`;
+  const pct = (t: number) => ((t - start) / (end - start)) * 100;
 
   return (
     <div className="timeline">
       <div className="bar">
-        {segments.map(([a, b]) => (
-          <span key={a} style={{ left: pct(Math.max(a, start)), width: `calc(${pct(b)} - ${pct(Math.max(a, start))})` }} />
+        {segments(events, start, end).map(([a, b]) => (
+          <span key={a} style={{ left: `${pct(a)}%`, width: `${Math.max(pct(b) - pct(a), 0.15)}%` }} />
+        ))}
+        {[25, 50, 75].map((p) => (
+          <i key={p} style={{ left: `${p}%` }} />
         ))}
       </div>
-      <div className="ticks">
-        <span>24 sa önce</span>
-        <span>12 sa</span>
-        <span>şimdi</span>
+      <div className="ticks mono">
+        <span>-24h</span>
+        <span>-18h</span>
+        <span>-12h</span>
+        <span>-6h</span>
+        <span>now</span>
       </div>
     </div>
   );
 }
 
-function radarDown(p: PresenceCurrent | null): boolean {
-  return !!p && (!p.sensor_online || p.radar_ok === false);
-}
-
 function ago(iso: string): string {
   const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000));
-  if (s < 60) return `${s} sn önce`;
-  if (s < 3600) return `${Math.floor(s / 60)} dk önce`;
-  if (s < 86400) return `${Math.floor(s / 3600)} sa önce`;
-  return `${Math.floor(s / 86400)} gün önce`;
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
 }

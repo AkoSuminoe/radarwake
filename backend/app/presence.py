@@ -19,6 +19,9 @@ log = logging.getLogger("radarwake.presence")
 router = APIRouter()
 
 SENSOR_OFFLINE_AFTER = timedelta(seconds=60)
+# ESP biri varken saniyede bir rapor atar. Her raporu DB'ye yazmak yerine canli okuma
+# bellekte tutulur; DB'ye sadece durum degisince ya da bu araliktan seyrek yazilir.
+HISTORY_SAMPLE_EVERY = timedelta(seconds=60)
 
 
 class PresenceIn(BaseModel):
@@ -27,7 +30,10 @@ class PresenceIn(BaseModel):
     stationary: bool = False
     moving_dist: int = Field(default=0, ge=0, le=10000)
     stationary_dist: int = Field(default=0, ge=0, le=10000)
+    moving_energy: int = Field(default=0, ge=0, le=100)
+    stationary_energy: int = Field(default=0, ge=0, le=100)
     radar_ok: bool = True  # ESP radardan veri alabiliyor mu
+    rssi: int | None = Field(default=None, ge=-127, le=0)
     ack: int | None = None
 
 
@@ -61,22 +67,25 @@ def ingest(body: PresenceIn, request: Request, background: BackgroundTasks, db: 
     state = get_state(db)
     out = PresenceOut()
 
-    event = PresenceEvent(
-        ts=now,
-        presence=body.presence,
-        moving=body.moving,
-        stationary=body.stationary,
-        moving_dist=body.moving_dist,
-        stationary_dist=body.stationary_dist,
-    )
-    db.add(event)
-    db.flush()
-    if event.id % 1000 == 0:
-        db.execute(delete(PresenceEvent).where(PresenceEvent.ts < now - timedelta(days=settings.history_retention_days)))
+    # Canli okuma (dashboard sonar ekrani icin), sadece bellekte
+    request.app.state.live = {"ts": now, **body.model_dump(exclude={"ack"})}
+
+    last = db.scalars(select(PresenceEvent).order_by(PresenceEvent.id.desc())).first()
+    if last is None or last.presence != body.presence or now - aware(last.ts) >= HISTORY_SAMPLE_EVERY:
+        event = PresenceEvent(
+            ts=now,
+            presence=body.presence,
+            moving=body.moving,
+            stationary=body.stationary,
+            moving_dist=body.moving_dist,
+            stationary_dist=body.stationary_dist,
+        )
+        db.add(event)
+        db.flush()
+        if event.id % 1000 == 0:
+            db.execute(delete(PresenceEvent).where(PresenceEvent.ts < now - timedelta(days=settings.history_retention_days)))
 
     state.last_report_at = now
-    # Sadece bellekte: DB semasini degistirmeden son rapordaki radar durumu
-    request.app.state.radar_ok = body.radar_ok
     if body.presence:
         state.last_present_at = now
 
@@ -138,7 +147,7 @@ def current(request: Request, db: Session = Depends(get_db)) -> CurrentOut:
         moving_dist=last.moving_dist if last else None,
         stationary_dist=last.stationary_dist if last else None,
         sensor_online=lr is not None and now - lr <= SENSOR_OFFLINE_AFTER,
-        radar_ok=getattr(request.app.state, "radar_ok", None),
+        radar_ok=live["radar_ok"] if (live := getattr(request.app.state, "live", None)) else None,
         last_present_at=aware(state.last_present_at),
         last_report_at=lr,
     )
@@ -168,3 +177,25 @@ def history(hours: int = Query(default=24, ge=1, le=168), db: Session = Depends(
         )
         for r in rows
     ]
+
+
+class LiveOut(BaseModel):
+    ts: datetime
+    presence: bool
+    moving: bool
+    stationary: bool
+    moving_dist: int
+    stationary_dist: int
+    moving_energy: int
+    stationary_energy: int
+    radar_ok: bool
+    rssi: int | None
+    age_s: float  # okumanin yasi; buyukse ESP rapor gondermiyor
+
+
+@router.get("/api/presence/live", response_model=LiveOut | None, dependencies=[Depends(require_jwt)])
+def live(request: Request) -> LiveOut | None:
+    data = getattr(request.app.state, "live", None)
+    if data is None:
+        return None
+    return LiveOut(**data, age_s=(utcnow() - data["ts"]).total_seconds())

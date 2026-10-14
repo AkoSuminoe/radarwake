@@ -17,6 +17,7 @@
 #define RGB_LED_PIN   48          // dahili WS2812 (bazi kartlarda 38)
 
 // --- Zamanlama ---
-#define REPORT_INTERVAL_MS  10000 // degisiklik yoksa heartbeat raporu
+#define REPORT_INTERVAL_MS  10000 // bos odada / degisiklik yoksa heartbeat raporu
+#define LIVE_REPORT_INTERVAL_MS 1000 // biri varken (dashboard canli sonar)
 #define MIN_REPORT_GAP_MS   1000  // degisiklikte bile en fazla saniyede 1
 #define POWER_PULSE_MS      300   // kisa basma; ~5 sn zorla kapatir, asla uzatma

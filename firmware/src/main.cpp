@@ -16,6 +16,10 @@
 
 static const uint32_t WDT_TIMEOUT_S = 30;
 
+#ifndef LIVE_REPORT_INTERVAL_MS
+#define LIVE_REPORT_INTERVAL_MS 1000
+#endif
+
 ld2410 radar;
 Preferences prefs;
 
@@ -244,7 +248,8 @@ void loop() {
   }
 
   bool changed = current.presence != lastSentPresence;
-  bool due = now - lastReportAt >= REPORT_INTERVAL_MS;
+  // Biri varken dashboard'daki canli sonar ekrani icin sik, bos odada seyrek rapor
+  bool due = now - lastReportAt >= (current.presence ? LIVE_REPORT_INTERVAL_MS : REPORT_INTERVAL_MS);
   bool gapOk = now - lastReportAt >= MIN_REPORT_GAP_MS;
   // Basma surerken rapor gonderme: HTTP bloklarken darbe uzamasin
   if (!pulseEndAt && gapOk && (changed || due || forceReport || pendingAck)) {
