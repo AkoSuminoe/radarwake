@@ -3,30 +3,65 @@
 # radarwake
 
 **Presence-aware PC control with a 24 GHz mmWave radar.**
+See who is at the desk, and wake, sleep or shut down the PC from your phone.
 
 [![CI](https://github.com/AkoSuminoe/radarwake/actions/workflows/ci.yml/badge.svg)](https://github.com/AkoSuminoe/radarwake/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/AkoSuminoe/radarwake?sort=semver)](https://github.com/AkoSuminoe/radarwake/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![ESP32-S3](https://img.shields.io/badge/ESP32--S3-PlatformIO-orange)
+![FastAPI](https://img.shields.io/badge/backend-FastAPI-009688)
+![Next.js](https://img.shields.io/badge/dashboard-Next.js%2015-black)
 ![Docker](https://img.shields.io/badge/server-Docker-2496ED)
+
+<img src="docs/images/sonar.gif" width="440" alt="Live sonar view: a person detected at 2 m, moving">
+
+<sub>Live dashboard fed by the LD2410C radar. The radar measures range, not bearing, so a
+target is drawn as an arc at its distance, with a fading echo trail.</sub>
 
 </div>
 
-An ESP32-S3 with an LD2410C mmWave radar detects whether someone is at the desk, reports
-it to a small backend on a home server, and can press the desktop's power button through
-an optocoupler. A LAN-only, password protected dashboard shows a live sonar view and lets
-you wake, sleep or shut down the PC from your phone.
+## Overview
+
+Wake-on-LAN does not work reliably on a Wi-Fi-only desktop, and leaving the PC on all day
+wastes power. radarwake solves both with hardware: an **ESP32-S3** next to the desk reads
+an **LD2410C mmWave radar**, reports presence to a small server on the home network, and,
+when asked, **presses the motherboard's power button through an optocoupler**. A signed
+agent on the PC handles sleep and shutdown, and a password-protected dashboard ties it
+together.
+
+The project spans the full stack: embedded C++ firmware, a hardened Python API, a React
+dashboard, a Windows service, Docker packaging, CI and release automation.
+
+<table>
+  <tr>
+    <td align="center" width="33%"><img src="docs/images/phone.png" alt="Dashboard on a phone"><br><sub><b>Phone dashboard</b></sub></td>
+    <td align="center" width="33%"><img src="docs/images/login.png" alt="Login screen"><br><sub><b>LAN-only login</b></sub></td>
+    <td align="center" width="33%"><img src="docs/images/desktop.png" alt="Dashboard on desktop"><br><sub><b>Desktop view</b></sub></td>
+  </tr>
+</table>
 
 ## Features
 
-- **Live sonar dashboard:** range, motion and signal strength, updated every second.
-- **Wake from anywhere in the house:** the ESP32 presses the real power button, so it works
-  from off, sleep or hibernate, and on Wi-Fi-only PCs where Wake-on-LAN does not.
-- **Sleep / shut down** through a small signed agent on the PC.
-- **OLED status screen** on the sensor (optional).
-- **Private by design:** home network only, argon2 password, signed device traffic,
-  hardened container.
-- **One-line installers** for the server (Linux / WSL2) and the Windows agent.
+- **Live sonar view:** range, motion and signal strength, updated every second while
+  someone is present, with a 24 h occupancy timeline.
+- **Real power-button wake:** works from off, sleep or hibernate, and on Wi-Fi PCs where
+  Wake-on-LAN does not.
+- **Sleep / shut down from the phone** through an HMAC-signed agent on the PC.
+- **OLED status screen** on the sensor with a mini sonar and the distance (optional).
+- **Private by design:** home network only, argon2 password login, authenticated device
+  traffic, replay protection, read-only non-root container.
+- **One-line installers** for the server (Linux / WSL2) and the Windows agent, built and
+  published by GitHub Actions.
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| Firmware | ESP32-S3, Arduino core 2.x on PlatformIO, LD2410C over UART, U8g2 (OLED), NVS |
+| Backend | Python 3.12, FastAPI, SQLAlchemy 2 + SQLite, PyJWT, argon2 (pwdlib) |
+| Dashboard | Next.js 15 static export, React 19, hand-drawn SVG sonar |
+| PC agent | Python standard library, packaged as a standalone `.exe` (PyInstaller) |
+| Ops | Docker multi-stage build, multi-arch image on GHCR, GitHub Actions CI + releases |
 
 ## Quick start
 
@@ -56,58 +91,88 @@ Enter the server IP and the agent secret printed by the server installer. No Pyt
 needed; the agent runs at boot as a background task. Remove it with
 `& "$env:ProgramFiles\radarwake-agent\uninstall.ps1"`.
 
-**3. Sensor:** wire the radar (see [Hardware](#hardware)), put the Wi-Fi details, the
-server URL and the ESP32 API key into `firmware/src/config.h` and flash it with PlatformIO
-(see [Firmware](#1-firmware)).
+**3. Sensor:** wire it up (see [Hardware](#hardware)), put the Wi-Fi details, the server
+URL and the ESP32 API key into `firmware/src/config.h` and flash it
+(see [Firmware](#firmware)).
 
-**4. Phone:** open `http://<server-ip>:8000` on the home Wi-Fi and sign in.
+**4. Phone:** open `http://<server-ip>:8000` on the home Wi-Fi and sign in. In Safari,
+Share → **Add to Home Screen** opens it like an app.
 
 ## How it works
 
-- **Server (always on):** a laptop running Docker inside WSL2. Backend and dashboard run
-  in a single isolated container, reachable **only from the home network**.
-- **Workstation (target):** the desktop being woken/slept. It is on Wi-Fi, so Wake-on-LAN
-  is not used; the ESP32 presses the motherboard power switch instead.
-- **Sensor node:** ESP32-S3 + LD2410C (+ optional 0.96" OLED) next to the desk, powered by
-  a USB charger.
-
-## Architecture
-
+```mermaid
+flowchart LR
+    subgraph desk["Desk"]
+        radar["LD2410C<br/>mmWave radar"] -- UART --> esp["ESP32-S3"]
+        esp -- I2C --> oled["OLED"]
+        esp -- "GPIO4 pulse" --> opto["PC817<br/>optocoupler"]
+        opto --> pwr["Motherboard<br/>PWR_SW"]
+    end
+    subgraph server["Home server (Docker)"]
+        api["FastAPI<br/>:8000 dashboard / :8001 devices"]
+        db[("SQLite")]
+        api --- db
+    end
+    subgraph pc["Workstation"]
+        agent["pc-agent<br/>:8765"]
+    end
+    phone["Phone / browser"] -- "HTTP + login" --> api
+    esp -- "presence report<br/>(API key)" --> api
+    api -. "press_power in reply" .-> esp
+    agent -- "heartbeat (HMAC)" --> api
+    api -- "sleep / shutdown (HMAC)" --> agent
 ```
-LD2410C --UART--> ESP32-S3 --Wi-Fi/HTTP :8001--> Backend (server, Docker)
-   OLED <--I2C---/   |   <-- "press_power" in reply --   |  SQLite: history + state
-                     |                                   |
-                 PC817 optocoupler                       |  HMAC-signed sleep/shutdown
-                     |                                   v
-           motherboard PWR_SW  <--  workstation -- pc-agent :8765
-                                         |  heartbeat (30 s) --> Backend :8001
 
- Phone / browser (home Wi-Fi) --HTTP--> http://<server-ip>:8000   (password login)
+**Waking the PC.** The ESP32 never listens on a port; commands ride on the reply to its
+regular report.
+
+```mermaid
+sequenceDiagram
+    actor U as You (phone)
+    participant B as Backend
+    participant E as ESP32
+    participant P as PC
+    U->>B: POST /api/pc/wake
+    B->>B: PC off? queue command (id, 60 s TTL)
+    E->>B: POST /api/presence (every 1-10 s)
+    B-->>E: reply: command press_power, id N
+    E->>P: 300 ms pulse on the power switch
+    E->>B: next report with ack N
+    P->>B: agent heartbeat → status "on"
 ```
 
-- **Wake:** dashboard `POST /api/pc/wake` -> backend queues a command -> the ESP32 receives
-  it in the reply to its next report -> pulses GPIO4 for 300 ms -> the PC powers on.
-  The ESP32 never listens on a port.
-- **Is the PC on?** Yes if the pc-agent heartbeat is newer than 90 s.
-- **Sleep / shut down:** the backend sends an HMAC-signed request to the pc-agent.
+- **Is the PC on?** Yes if the pc-agent heartbeat is newer than 90 s. Wake is refused
+  (409) while the PC is on, so a running PC never gets a button press.
+- **Sleep / shut down:** the backend sends an HMAC-signed request to the agent.
+- **Reports:** every second while someone is present, every 10 s otherwise. History is
+  written to the database only on changes or once a minute.
 
 ## Hardware
 
-Board: ESP32-S3 N16R8 DevKitC-style clone (YD-ESP32-S3) with two USB-C ports.
+<p align="center"><img src="docs/images/wiring.svg" alt="Wiring diagram: ESP32-S3 to LD2410C, OLED and PC817 optocoupler" width="860"></p>
 
-> **Note:** on this board the `5Vin` pin does **not** output 5 V from USB until the
-> `IN-OUT` solder pads next to it are bridged. Bridge them before powering the radar
-> from `5Vin`.
+| Part | Notes |
+|---|---|
+| ESP32-S3 dev board | YD-ESP32-S3 N16R8 (DevKitC-style, two USB-C ports) |
+| HLK-LD2410C | 24 GHz mmWave presence radar, 5 V |
+| PC817 optocoupler module | 1 channel, rated for 3-5 V input |
+| 0.96" OLED (optional) | SSD1306 128×64, I2C (1.3" SH1106 also supported) |
+| Dupont wires, 5 V USB charger | the charger keeps the sensor alive while the PC is off |
 
-Use the port labelled **USB** (native USB-Serial/JTAG) for flashing and the serial
-monitor; the firmware is built for it. For permanent use, plug the board into a 5 V USB
-charger, not into the workstation (its USB power drops when the PC is off).
+> [!WARNING]
+> **Solder the `IN-OUT` pads on the YD-ESP32-S3.** On this board the `5Vin` pin is not
+> connected to USB 5 V out of the box, so the radar gets no power and stays dark (no
+> data, no Bluetooth advertising). Next to the `5Vin` pin there are two small pads marked
+> **IN** and **OUT**: unplug the board, bridge them with a blob of solder, check there is
+> no short to neighbouring pins, then power up. Afterwards `5Vin` carries 5 V from USB.
+> A quick test before soldering: power the radar from `3V3` for a moment; if data
+> arrives, the missing 5 V was the problem.
 
 **LD2410C radar**
 
 | LD2410C | ESP32-S3 |
-|---------|----------|
-| VCC | 5Vin |
+|---|---|
+| VCC | 5Vin (after the solder bridge) |
 | GND | GND |
 | TX  | GPIO18 |
 | RX  | GPIO17 |
@@ -116,63 +181,54 @@ charger, not into the workstation (its USB power drops when the PC is off).
 The firmware scans both pin directions and common baud rates at boot, so swapped TX/RX
 still works.
 
-**0.96" SSD1306 OLED (optional)**
+**0.96" OLED (optional)**
 
 | OLED | ESP32-S3 |
-|------|----------|
+|---|---|
 | GND | GND |
-| VDD | 3V3 |
+| VDD | **3V3** (not 5 V) |
 | SCK | GPIO9 |
 | SDA | GPIO8 |
 
-Shows a mini sonar, range, motion state, signal strength, Wi-Fi bars and PC state. It turns
-off after 5 minutes with nobody around and shifts by a pixel every minute to limit OLED
-burn-in. For 1.3" SH1106 panels, add `#define OLED_SH1106` to `config.h`.
+Shows a mini sonar, the distance, motion state, signal strength, Wi-Fi bars and PC state.
+It turns off after 5 minutes with nobody around and shifts by a pixel every minute to
+limit burn-in. For 1.3" SH1106 panels add `#define OLED_SH1106` to `config.h`. Without a
+display the firmware logs `[oled] ekran bulunamadi` and carries on.
 
-**PC817 optocoupler module -> power switch**
+**PC817 optocoupler → power switch**
 
-Use a module rated for **3.3 V input** (3-5 V); one channel is enough.
-
-```
-ESP GPIO4 --> module IN
-ESP GND   --> module GND (input side)
-module output (collector) --> motherboard PWR_SW +
-module output (emitter)   --> motherboard PWR_SW -
-```
+| From | To |
+|---|---|
+| ESP GPIO4 | module IN |
+| ESP GND | module GND (input side) |
+| module output, collector | motherboard PWR_SW + |
+| module output, emitter | motherboard PWR_SW − |
 
 Wire it in parallel with the case button so that keeps working. The optocoupler keeps
 the ESP32 and the PC electrically isolated. Until it is installed, a wake command only
 lights the board's RGB LED blue.
 
-Pins to avoid: 0/3/45/46 (strapping), 19/20 (native USB), 43/44 (UART0), 35-37 (octal PSRAM).
+**Power and USB.** Flash through the port labelled **USB** (native USB-Serial/JTAG). For
+permanent use, plug the board into a 5 V USB charger, not into the workstation (its USB
+power drops when the PC is off). Pins to avoid: 0/3/45/46 (strapping), 19/20 (native USB),
+43/44 (UART0), 35-37 (octal PSRAM).
 
-## Repository layout
+## Setup in detail
 
-```
-firmware/   ESP32-S3 (PlatformIO, Arduino core 2.x)
-backend/    FastAPI service (Docker on the server)
-frontend/   Next.js dashboard (static export, bundled into the backend image)
-pc-agent/   sleep/shutdown + heartbeat agent for the workstation (Windows, stdlib only)
-scripts/    one-line installers (server, WSL2 host, agent)
-```
-
-Releases are built by GitHub Actions on every `v*` tag: the Windows agent exe/zip, the
-multi-arch container image and the installer scripts. See [CHANGELOG.md](CHANGELOG.md).
-
-## Setup
-
-### 1. Firmware
+### Firmware
 
 1. Copy `firmware/src/config.example.h` to `config.h` and fill in Wi-Fi (2.4 GHz), the
-   server LAN IP and `API_KEY`.
+   server LAN IP and `API_KEY` (printed by the server installer).
 2. Connect the **USB** port and run `pio run -t upload -t monitor`
    (if `pio` is not on PATH: `~/.platformio/penv/Scripts/pio`). The first flash may need
    BOOT held while tapping RST.
 3. Expect `[radar] RX=GPIO18 256000 baud ... <- valid frame` and `[report] ... -> 200`.
 
-### 2. Backend (server)
+The firmware is not shipped as a binary because Wi-Fi credentials and the API key are
+compiled in.
 
-`scripts/install.sh` (see [Quick start](#quick-start)) does all of this. Manual setup:
+<details>
+<summary><b>Server, manual setup</b> (what <code>install.sh</code> does)</summary>
 
 ```bash
 cd backend
@@ -190,10 +246,13 @@ docker compose up -d --build
 - Prebuilt image: `ghcr.io/akosuminoe/radarwake` (amd64, arm64); `--build` builds from source.
 - Reserve DHCP addresses for the server, the workstation and the ESP32.
 
-### 3. pc-agent (workstation, elevated PowerShell)
+</details>
 
-`get-agent.ps1` (see [Quick start](#quick-start)) downloads the release zip and runs the
-installer. From a checkout (uses `agent.py` + python.org Python instead of the exe):
+<details>
+<summary><b>pc-agent, manual setup</b></summary>
+
+`get-agent.ps1` downloads the release zip and runs the installer. From a checkout (uses
+`agent.py` + python.org Python instead of the exe):
 
 ```powershell
 cd pc-agent
@@ -206,28 +265,24 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1 -ServerIp <server-ip> -Po
 - `-PowerButtonDoNothing`: a stray press on a running PC does nothing; waking from sleep or
   power-on from off still works because that is handled by the firmware.
 - `-DisableHibernate`: makes "sleep" a real S3 sleep instead of hibernation.
-- The release exe needs no Python; the `agent.py` fallback needs python.org Python
-  installed for all users.
 
-### 4. Phone
+</details>
 
-Open `http://<server-ip>:8000` on the home Wi-Fi and sign in. In Safari, Share -> **Add to
-Home Screen** opens it like an app. It does not work outside the home network by design;
-Tailscale would be the safe way to add remote access later.
+<details>
+<summary><b>Troubleshooting</b></summary>
 
-## Dashboard
+| Symptom | Fix |
+|---|---|
+| Radar LED off, `[radar]` finds no frames | `5Vin` has no power: solder the `IN-OUT` pads (see Hardware) |
+| ESP32 Wi-Fi fails with `reason=15` | Change the router's 2.4 GHz wireless mode (EE Smart Hub: Mode 2), set a fixed channel, turn WPS off, restart the router |
+| Dashboard unreachable from the phone | Phone not on home Wi-Fi, or WSL firewall / mirrored mode missing |
+| Workstation shows offline | Agent not running (`agent.log`), network set to Public, or wrong secret |
+| `[oled] ekran bulunamadi` | Check SDA/SCK wiring and that VDD is on 3V3 |
 
-- **Presence scan:** a live sonar view (1 s updates while someone is present). The LD2410C
-  measures range, not bearing, so a target is drawn as an arc at the measured distance
-  across the field of view, with a fading echo trail. Range, motion and signal readouts.
-- **Workstation:** online / offline / booting, plus Wake, Sleep and Shut down. Wake is only
-  enabled while the PC is off; Sleep and Shut down only while it is on.
-- **Activity:** occupancy timeline for the last 24 hours.
+</details>
 
-Development: `cd frontend && npm install && npm run build` produces `out/`. For a local run,
-copy it to `backend/static` and start the backend.
-
-## API
+<details>
+<summary><b>API</b></summary>
 
 | Endpoint | Port | Auth | Notes |
 |---|---|---|---|
@@ -245,6 +300,8 @@ copy it to `backend/static` and start the backend.
 | `GET  /api/health` | both | - | healthcheck |
 
 Each route is only served on its own port; the other port returns 404.
+
+</details>
 
 ## Security decisions
 
@@ -272,37 +329,43 @@ Each route is only served on its own port; the other port returns 404.
 - **Automatic sleep and wake are off by default** (`AUTO_SLEEP_ENABLED`, `AUTO_WAKE_ENABLED`);
   enable them after manual testing.
 
-## Roadmap
+Report vulnerabilities privately, see [SECURITY.md](SECURITY.md).
 
-1. ~~Backend: auth, SQLite, Docker Compose, power command queue~~
-2. ~~Firmware: LD2410C, authenticated reports, power button pulse~~
-3. ~~pc-agent: heartbeat, signed sleep/shutdown~~
-4. ~~Dashboard: live sonar, workstation controls, 24 h activity~~
-5. ~~LAN-only deployment on the server~~
-6. Optocoupler install and end-to-end wake test
-7. Radar tuning (gates, sensitivity) and LD2410C engineering mode for per-zone detection
-   (desk vs. bed)
-8. Phone control over BLE directly to the ESP32
+## Repository layout
+
+```
+firmware/   ESP32-S3 firmware (PlatformIO, Arduino core 2.x)
+backend/    FastAPI service (Docker on the server)
+frontend/   Next.js dashboard (static export, bundled into the backend image)
+pc-agent/   sleep/shutdown + heartbeat agent for the workstation (Windows)
+scripts/    one-line installers (server, WSL2 host, agent)
+docs/       images
+```
+
+Releases are built by GitHub Actions on every `v*` tag: the Windows agent exe/zip, the
+multi-arch container image and the installer scripts. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Development
 
 ```bash
-cd backend
-pip install -r requirements-dev.txt
-python -m pytest -q
+cd backend && pip install -r requirements-dev.txt && python -m pytest -q   # API tests
+cd frontend && npm install && npm run build                                # dashboard -> out/
+cd firmware && pio run                                                     # firmware
 ```
 
-## Dependencies
+For a local dashboard run, copy `frontend/out` to `backend/static` and start the backend.
+CI runs all three plus `shellcheck` and a PowerShell parse check on every push.
 
-- **Firmware:** `ncmreynolds/ld2410`, `bblanchon/ArduinoJson`, `olikraus/U8g2`.
-- **Backend (Python 3.12):** `fastapi`, `uvicorn`, `sqlalchemy`, `pydantic-settings`,
-  `PyJWT`, `pwdlib[argon2]`, `httpx`.
-- **Dashboard:** Next.js 15, React 19 (static export).
-- **pc-agent:** Python standard library only.
+## Roadmap
 
-## Security
-
-See [SECURITY.md](SECURITY.md) for how to report a vulnerability.
+- [x] Backend: auth, SQLite, Docker Compose, power command queue
+- [x] Firmware: LD2410C, authenticated reports, power-button pulse, OLED
+- [x] pc-agent: heartbeat, signed sleep/shutdown, standalone exe
+- [x] Dashboard: live sonar, workstation controls, 24 h activity
+- [x] LAN-only deployment, one-line installers, release pipeline
+- [ ] Optocoupler install and end-to-end wake test
+- [ ] Radar tuning and LD2410C engineering mode for per-zone detection (desk vs. bed)
+- [ ] Phone control over BLE directly to the ESP32
 
 ## License
 

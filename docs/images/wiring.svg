@@ -1,0 +1,142 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 680" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M24 0H0V24" fill="none" stroke="#0f1d1c" stroke-width="1"/>
+    </pattern>
+    <style>
+      .box { fill: #0b1213; stroke: #1f3a37; stroke-width: 1.5; rx: 14; }
+      .title { fill: #e6f1ef; font-size: 15px; font-weight: 700; letter-spacing: 2px; }
+      .sub { fill: #6f8a87; font-size: 11px; letter-spacing: 1px; }
+      .pin { fill: #c9d6d4; font-size: 12.5px; }
+      .pinr { fill: #c9d6d4; font-size: 12.5px; text-anchor: end; }
+      .dot { stroke: #0b1213; stroke-width: 2; }
+      .w { fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+      .note { fill: #ffb347; font-size: 11.5px; }
+      .gnd { fill: #8a9499; font-size: 11px; }
+    </style>
+  </defs>
+
+  <rect width="980" height="680" fill="#05080a"/>
+  <rect width="980" height="680" fill="url(#grid)"/>
+
+  <!-- ESP32-S3 -->
+  <rect class="box" x="60" y="50" width="250" height="580"/>
+  <text class="title" x="85" y="85">ESP32-S3</text>
+  <text class="sub" x="85" y="103">YD-ESP32-S3 · N16R8</text>
+  <rect x="120" y="580" width="40" height="26" rx="6" fill="#141c1d" stroke="#2a3b3a"/>
+  <rect x="200" y="580" width="40" height="26" rx="6" fill="#141c1d" stroke="#2a3b3a"/>
+  <text class="sub" x="140" y="624" text-anchor="middle">COM</text>
+  <text class="sub" x="220" y="624" text-anchor="middle">USB</text>
+
+  <!-- IN-OUT solder bridge callout -->
+  <rect x="96" y="128" width="16" height="12" rx="2" fill="#c9a24a"/>
+  <rect x="120" y="128" width="16" height="12" rx="2" fill="#c9a24a"/>
+  <rect x="104" y="131" width="24" height="6" rx="3" fill="#d9d9d9"/>
+  <text class="note" x="96" y="160">bridge IN-OUT pads</text>
+  <text class="note" x="96" y="175">with solder, or 5Vin</text>
+  <text class="note" x="96" y="190">has no 5 V from USB</text>
+  <path d="M138 134 C 200 134, 220 130, 262 130" fill="none" stroke="#ffb347" stroke-width="1.2" stroke-dasharray="3 3"/>
+
+  <g>
+    <text class="pinr" x="294" y="134">5Vin</text>
+    <text class="pinr" x="294" y="174">GND</text>
+    <text class="pinr" x="294" y="214">GPIO18</text>
+    <text class="pinr" x="294" y="254">GPIO17</text>
+    <text class="pinr" x="294" y="294">GPIO5</text>
+    <text class="pinr" x="294" y="354">3V3</text>
+    <text class="pinr" x="294" y="394">GPIO9</text>
+    <text class="pinr" x="294" y="434">GPIO8</text>
+    <text class="pinr" x="294" y="474">GND</text>
+    <text class="pinr" x="294" y="524">GPIO4</text>
+    <text class="pinr" x="294" y="564">GND</text>
+  </g>
+
+  <!-- wires: radar -->
+  <path class="w" stroke="#ff5c5c" d="M310 130H640"/>
+  <path class="w" stroke="#8a9499" d="M310 170H640"/>
+  <path class="w" stroke="#5ce1d0" d="M310 210H640"/>
+  <path class="w" stroke="#7aa7ff" d="M310 250H640"/>
+  <path class="w" stroke="#c792ea" d="M310 290H640" stroke-dasharray="7 6"/>
+  <text class="sub" x="470" y="203" text-anchor="middle">radar TX → ESP RX</text>
+  <text class="sub" x="470" y="243" text-anchor="middle">ESP TX → radar RX</text>
+  <text class="sub" x="470" y="283" text-anchor="middle">optional</text>
+
+  <!-- wires: OLED -->
+  <path class="w" stroke="#ffb347" d="M310 350H640"/>
+  <path class="w" stroke="#f78fb3" d="M310 390H640"/>
+  <path class="w" stroke="#9be37b" d="M310 430H640"/>
+  <path class="w" stroke="#8a9499" d="M310 470H640"/>
+  <text class="sub" x="470" y="343" text-anchor="middle">3.3 V, not 5 V</text>
+
+  <!-- wires: optocoupler -->
+  <path class="w" stroke="#ffd166" d="M310 520H560"/>
+  <path class="w" stroke="#8a9499" d="M310 560H560"/>
+  <text class="sub" x="435" y="513" text-anchor="middle">300 ms pulse</text>
+
+  <g class="dot">
+    <circle cx="310" cy="130" r="5" fill="#ff5c5c"/><circle cx="310" cy="170" r="5" fill="#8a9499"/>
+    <circle cx="310" cy="210" r="5" fill="#5ce1d0"/><circle cx="310" cy="250" r="5" fill="#7aa7ff"/>
+    <circle cx="310" cy="290" r="5" fill="#c792ea"/><circle cx="310" cy="350" r="5" fill="#ffb347"/>
+    <circle cx="310" cy="390" r="5" fill="#f78fb3"/><circle cx="310" cy="430" r="5" fill="#9be37b"/>
+    <circle cx="310" cy="470" r="5" fill="#8a9499"/><circle cx="310" cy="520" r="5" fill="#ffd166"/>
+    <circle cx="310" cy="560" r="5" fill="#8a9499"/>
+  </g>
+
+  <!-- LD2410C -->
+  <rect class="box" x="640" y="70" width="280" height="245"/>
+  <text class="title" x="904" y="100" text-anchor="end">LD2410C</text>
+  <text class="sub" x="904" y="118" text-anchor="end">24 GHz mmWave · UART 256000</text>
+  <text class="pin" x="656" y="134">VCC</text>
+  <text class="pin" x="656" y="174">GND</text>
+  <text class="pin" x="656" y="214">TX</text>
+  <text class="pin" x="656" y="254">RX</text>
+  <text class="pin" x="656" y="294">OUT</text>
+  <g opacity="0.85">
+    <path d="M820 270 A20 20 0 0 1 860 270" fill="none" stroke="#5ce1d0" stroke-width="1.5" opacity="0.9"/>
+    <path d="M800 270 A40 40 0 0 1 880 270" fill="none" stroke="#5ce1d0" stroke-width="1.5" opacity="0.6"/>
+    <path d="M780 270 A60 60 0 0 1 900 270" fill="none" stroke="#5ce1d0" stroke-width="1.5" opacity="0.35"/>
+    <circle cx="840" cy="270" r="4" fill="#5ce1d0"/>
+  </g>
+
+  <!-- OLED -->
+  <rect class="box" x="640" y="330" width="280" height="160"/>
+  <text class="title" x="904" y="360" text-anchor="end">OLED 0.96"</text>
+  <text class="sub" x="904" y="378" text-anchor="end">SSD1306 · I2C 0x3C · optional</text>
+  <text class="pin" x="656" y="354">VDD</text>
+  <text class="pin" x="656" y="394">SCK</text>
+  <text class="pin" x="656" y="434">SDA</text>
+  <text class="pin" x="656" y="474">GND</text>
+  <rect x="770" y="395" width="128" height="64" rx="3" fill="#020405" stroke="#1f3a37"/>
+  <text x="775" y="406" fill="#5ce1d0" font-size="7">RADARWAKE</text>
+  <text x="893" y="406" fill="#5ce1d0" font-size="7" text-anchor="end">PC ON</text>
+  <path d="M770 410H898" stroke="#5ce1d0" stroke-width="0.6"/>
+  <path d="M800 455 L774 440 A30 30 0 0 1 826 440 Z" fill="none" stroke="#5ce1d0" stroke-width="0.8"/>
+  <path d="M787 448 A15 15 0 0 1 813 448" fill="none" stroke="#e6f1ef" stroke-width="1.6"/>
+  <text x="834" y="438" fill="#e6f1ef" font-size="16" font-weight="700">1.98</text>
+  <text x="872" y="438" fill="#5ce1d0" font-size="8">m</text>
+  <text x="834" y="452" fill="#5ce1d0" font-size="8">STILL</text>
+
+  <!-- PC817 -->
+  <rect class="box" x="560" y="505" width="170" height="110"/>
+  <text class="title" x="645" y="595" text-anchor="middle">PC817</text>
+  <text class="sub" x="645" y="610" text-anchor="middle">optocoupler, 3–5 V in</text>
+  <text class="pin" x="574" y="524">IN</text>
+  <text class="pin" x="574" y="564">GND</text>
+  <text class="pinr" x="716" y="534">C</text>
+  <text class="pinr" x="716" y="564">E</text>
+
+  <path class="w" stroke="#5ce1d0" d="M730 530H820"/>
+  <path class="w" stroke="#5ce1d0" d="M730 560H820" opacity="0.6"/>
+
+  <!-- motherboard header -->
+  <rect class="box" x="820" y="505" width="130" height="110"/>
+  <text class="title" x="885" y="595" text-anchor="middle">PWR_SW</text>
+  <text class="sub" x="885" y="610" text-anchor="middle">motherboard</text>
+  <text class="pin" x="836" y="534">+</text>
+  <text class="pin" x="836" y="564">−</text>
+  <rect x="890" y="520" width="16" height="16" rx="2" fill="#141c1d" stroke="#c9a24a"/>
+  <rect x="890" y="550" width="16" height="16" rx="2" fill="#141c1d" stroke="#c9a24a"/>
+  <text class="gnd" x="950" y="640" text-anchor="end">wired in parallel with the case button</text>
+
+  <text class="sub" x="60" y="660">radarwake · wiring</text>
+</svg>
