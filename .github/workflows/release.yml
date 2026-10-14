@@ -1,0 +1,86 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  agent:
+    name: Windows agent
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyinstaller==6.11.1
+      - name: Build radarwake-agent.exe
+        run: pyinstaller --onefile --noconsole --name radarwake-agent --distpath build/exe pc-agent/agent.py
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build/zip, dist | Out-Null
+          Copy-Item build/exe/radarwake-agent.exe, pc-agent/agent.py, pc-agent/install.ps1, pc-agent/uninstall.ps1, pc-agent/config.example.json build/zip/
+          Compress-Archive -Path build/zip/* -DestinationPath dist/radarwake-agent-windows.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent
+          path: dist/radarwake-agent-windows.zip
+
+  image:
+    name: Server image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/radarwake
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  release:
+    needs: [agent, image]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: agent
+          path: dist
+      - name: Collect assets
+        run: |
+          cp scripts/install.sh scripts/get-agent.ps1 scripts/wsl-server-setup.ps1 dist/
+          (cd dist && sha256sum * > SHA256SUMS)
+      - name: Release notes from CHANGELOG.md
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          awk -v v="$ver" '/^## /{p = index($0, "[" v "]") > 0; next} p' CHANGELOG.md > notes.md
+          cat .github/release-footer.md >> notes.md
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "radarwake $GITHUB_REF_NAME" --notes-file notes.md --verify-tag

@@ -25,8 +25,10 @@ from pathlib import Path
 
 MAX_SKEW_S = 30
 MAX_BODY = 1024
-CONFIG_PATH = Path(__file__).with_name("config.json")
-LOG_PATH = Path(__file__).with_name("agent.log")
+# PyInstaller exe'sinde __file__ gecici klasoru gosterir; config exe'nin yaninda durur
+BASE_DIR = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).parent
+CONFIG_PATH = BASE_DIR / "config.json"
+LOG_PATH = BASE_DIR / "agent.log"
 
 log = logging.getLogger("radarwake.agent")
 

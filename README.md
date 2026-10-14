@@ -1,9 +1,68 @@
+<div align="center">
+
 # radarwake
 
-Presence-aware workstation control. An ESP32-S3 with an LD2410C 24 GHz mmWave radar
-detects whether someone is at the desk, reports it to a small backend on a home server,
-and can press the desktop's power button through an optocoupler. A LAN-only, password
-protected dashboard shows a live sonar view and lets you wake, sleep or shut down the PC.
+**Presence-aware PC control with a 24 GHz mmWave radar.**
+
+[![CI](https://github.com/AkoSuminoe/radarwake/actions/workflows/ci.yml/badge.svg)](https://github.com/AkoSuminoe/radarwake/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/AkoSuminoe/radarwake?sort=semver)](https://github.com/AkoSuminoe/radarwake/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![ESP32-S3](https://img.shields.io/badge/ESP32--S3-PlatformIO-orange)
+![Docker](https://img.shields.io/badge/server-Docker-2496ED)
+
+</div>
+
+An ESP32-S3 with an LD2410C mmWave radar detects whether someone is at the desk, reports
+it to a small backend on a home server, and can press the desktop's power button through
+an optocoupler. A LAN-only, password protected dashboard shows a live sonar view and lets
+you wake, sleep or shut down the PC from your phone.
+
+## Features
+
+- **Live sonar dashboard:** range, motion and signal strength, updated every second.
+- **Wake from anywhere in the house:** the ESP32 presses the real power button, so it works
+  from off, sleep or hibernate, and on Wi-Fi-only PCs where Wake-on-LAN does not.
+- **Sleep / shut down** through a small signed agent on the PC.
+- **OLED status screen** on the sensor (optional).
+- **Private by design:** home network only, argon2 password, signed device traffic,
+  hardened container.
+- **One-line installers** for the server (Linux / WSL2) and the Windows agent.
+
+## Quick start
+
+**1. Server** (always-on Linux box, Raspberry Pi or WSL2 with Docker):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/AkoSuminoe/radarwake/main/scripts/install.sh | bash
+```
+
+It asks for the server's LAN IP, the PC's IP and a dashboard password, generates all
+secrets and starts the container. Run it again any time to update.
+
+If the server is a Windows machine running WSL2, also run this once in an elevated
+PowerShell on Windows (mirrored networking, firewall, start at boot):
+
+```powershell
+irm https://github.com/AkoSuminoe/radarwake/releases/latest/download/wsl-server-setup.ps1 | iex
+```
+
+**2. Workstation agent** (the PC you want to wake/sleep), elevated PowerShell:
+
+```powershell
+irm https://github.com/AkoSuminoe/radarwake/releases/latest/download/get-agent.ps1 | iex
+```
+
+Enter the server IP and the agent secret printed by the server installer. No Python
+needed; the agent runs at boot as a background task. Remove it with
+`& "$env:ProgramFiles\radarwake-agent\uninstall.ps1"`.
+
+**3. Sensor:** wire the radar (see [Hardware](#hardware)), put the Wi-Fi details, the
+server URL and the ESP32 API key into `firmware/src/config.h` and flash it with PlatformIO
+(see [Firmware](#1-firmware)).
+
+**4. Phone:** open `http://<server-ip>:8000` on the home Wi-Fi and sign in.
+
+## How it works
 
 - **Server (always on):** a laptop running Docker inside WSL2. Backend and dashboard run
   in a single isolated container, reachable **only from the home network**.
@@ -94,7 +153,11 @@ firmware/   ESP32-S3 (PlatformIO, Arduino core 2.x)
 backend/    FastAPI service (Docker on the server)
 frontend/   Next.js dashboard (static export, bundled into the backend image)
 pc-agent/   sleep/shutdown + heartbeat agent for the workstation (Windows, stdlib only)
+scripts/    one-line installers (server, WSL2 host, agent)
 ```
+
+Releases are built by GitHub Actions on every `v*` tag: the Windows agent exe/zip, the
+multi-arch container image and the installer scripts. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Setup
 
@@ -109,6 +172,8 @@ pc-agent/   sleep/shutdown + heartbeat agent for the workstation (Windows, stdli
 
 ### 2. Backend (server)
 
+`scripts/install.sh` (see [Quick start](#quick-start)) does all of this. Manual setup:
+
 ```bash
 cd backend
 python -m venv .venv && .venv/bin/pip install pwdlib[argon2]
@@ -120,22 +185,29 @@ docker compose up -d --build
 
 - Ports 8000 (dashboard) and 8001 (ESP32 + agent) are bound to `LAN_IP` only.
 - On WSL2 with native Docker use `networkingMode=mirrored` and allow 8000/8001 from the
-  LAN subnet in both the Hyper-V firewall and Windows Firewall.
+  LAN subnet in both the Hyper-V firewall and Windows Firewall
+  (`scripts/wsl-server-setup.ps1`). Enable systemd in WSL so Docker starts with the distro.
+- Prebuilt image: `ghcr.io/akosuminoe/radarwake` (amd64, arm64); `--build` builds from source.
 - Reserve DHCP addresses for the server, the workstation and the ESP32.
 
 ### 3. pc-agent (workstation, elevated PowerShell)
 
+`get-agent.ps1` (see [Quick start](#quick-start)) downloads the release zip and runs the
+installer. From a checkout (uses `agent.py` + python.org Python instead of the exe):
+
 ```powershell
 cd pc-agent
-copy config.example.json config.json   # backend_url, secret, allowed_ips
-powershell -ExecutionPolicy Bypass -File .\install.ps1 -LaptopIp <server-ip> -PowerButtonDoNothing -DisableHibernate
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -ServerIp <server-ip> -PowerButtonDoNothing -DisableHibernate
 ```
 
+- Installs to `C:\Program Files\radarwake-agent`; `config.json` there is readable by
+  Administrators and SYSTEM only. Prompts for the secret if no config exists.
 - Runs at boot as SYSTEM (before login), restarts on failure, firewall-limited to the server.
 - `-PowerButtonDoNothing`: a stray press on a running PC does nothing; waking from sleep or
   power-on from off still works because that is handled by the firmware.
 - `-DisableHibernate`: makes "sleep" a real S3 sleep instead of hibernation.
-- Requires python.org Python installed for all users.
+- The release exe needs no Python; the `agent.py` fallback needs python.org Python
+  installed for all users.
 
 ### 4. Phone
 
@@ -228,6 +300,10 @@ python -m pytest -q
 - **Dashboard:** Next.js 15, React 19 (static export).
 - **pc-agent:** Python standard library only.
 
+## Security
+
+See [SECURITY.md](SECURITY.md) for how to report a vulnerability.
+
 ## License
 
-MIT
+[MIT](LICENSE)

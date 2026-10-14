@@ -1,0 +1,33 @@
+name: Bug report
+description: Something does not work as described
+labels: [bug]
+body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options: [Firmware (ESP32), Server / backend, Dashboard, pc-agent, Installer]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: v0.1.0 or commit hash
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Serial monitor output, `docker compose logs backend` or `agent.log`. **Remove passwords, API keys and secrets.**
+      render: text
+  - type: textarea
+    id: setup
+    attributes:
+      label: Setup
+      description: Board, radar module, server OS (Linux / WSL2), router if it is a Wi-Fi issue.

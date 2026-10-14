@@ -1,11 +1,12 @@
-# Laptopta (server) calisir:  docker compose up -d --build
-# Kok dizindeki .env sadece compose degiskenleri icin (LAN_IP);
-# uygulama ayarlari backend/.env icinde.
+# Server: scripts/install.sh sets everything up, or manually:
+#   docker compose up -d --build
+# The root .env only holds compose variables (LAN_IP); app settings live in backend/.env.
 #
-# Servis sadece ev agindan erisilir: portlar laptopun LAN IP'sine baglanir,
-# Tailscale/diger arayuzlerden ve internetten erisilemez.
+# The service is reachable from the home network only: ports are bound to the server's
+# LAN IP, not to Tailscale/other interfaces and not to the internet.
 services:
   backend:
+    image: ${RADARWAKE_IMAGE:-ghcr.io/akosuminoe/radarwake:latest}
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -15,8 +16,8 @@ services:
     environment:
       DATABASE_URL: sqlite:////app/data/presence.db
     ports:
-      - "${LAN_IP:?root .env icinde LAN_IP ayarla}:8000:8000"   # dashboard (telefon/tarayici)
-      - "${LAN_IP}:8001:8001"                                   # ESP32 + pc-agent
+      - "${LAN_IP:?set LAN_IP in the root .env}:8000:8000"   # dashboard (phone/browser)
+      - "${LAN_IP}:8001:8001"                                # ESP32 + pc-agent
     volumes:
       - radarwake-data:/app/data
     read_only: true

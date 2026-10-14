@@ -1,7 +1,8 @@
 # Build context: repo koku (docker-compose.yml'de context: .)
 
 # --- 1) Dashboard (Next.js static export) ---
-FROM node:22-alpine AS dashboard
+# Static output is platform independent: build it natively even for arm64 images
+FROM --platform=$BUILDPLATFORM node:22-alpine AS dashboard
 WORKDIR /src
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --no-audit --no-fund
