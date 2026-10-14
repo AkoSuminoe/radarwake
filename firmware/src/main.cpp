@@ -73,6 +73,32 @@ void connectWifi() {
   }
 }
 
+// Radar surekli veri yollar (~10 Hz). Iki pin yonunu de dener: TX/RX ters takildiysa
+// kablo degistirmeye gerek kalmaz. Hic bayt gelmiyorsa sorun guc/kablodur.
+void startRadar() {
+  const int pins[2][2] = {{RADAR_RX_PIN, RADAR_TX_PIN}, {RADAR_TX_PIN, RADAR_RX_PIN}};
+  Serial1.setRxBufferSize(1024);
+  for (auto& p : pins) {
+    Serial1.begin(256000, SERIAL_8N1, p[0], p[1]);
+    delay(50);
+    while (Serial1.available()) Serial1.read();
+    delay(1000);
+    int bytes = Serial1.available();
+    Serial.printf("[radar] RX=GPIO%d TX=GPIO%d: 1 sn'de %d bayt\n", p[0], p[1], bytes);
+    if (bytes > 0 && radar.begin(Serial1)) {
+      Serial.printf("[radar] baglandi, firmware %u.%u.%x\n", radar.firmware_major_version,
+                    radar.firmware_minor_version, radar.firmware_bugfix_version);
+      return;
+    }
+    Serial1.end();
+  }
+  Serial.println("[radar] cevap yok: VCC->5V, GND->G ve TX/RX kablolarini kontrol et");
+  Serial1.begin(256000, SERIAL_8N1, RADAR_RX_PIN, RADAR_TX_PIN);
+  // Kutuphane stream'i begin() icinde atar; cagrilmazsa read() null'a erisip coker.
+  // Radar sonradan baglanirsa da veri okunmaya baslar.
+  radar.begin(Serial1, false);
+}
+
 void readRadar() {
   radar.read();
   if (!radar.isConnected()) return;
@@ -162,16 +188,7 @@ void setup() {
   prefs.begin("radarwake", false);
   lastExecutedCmd = prefs.getUInt("last_cmd", 0);
 
-  Serial1.setRxBufferSize(1024);
-  Serial1.begin(256000, SERIAL_8N1, RADAR_RX_PIN, RADAR_TX_PIN);
-  delay(500);
-  if (radar.begin(Serial1)) {
-    Serial.printf("[radar] baglandi, firmware %u.%u.%x\n",
-                  radar.firmware_major_version, radar.firmware_minor_version,
-                  radar.firmware_bugfix_version);
-  } else {
-    Serial.println("[radar] cevap yok: TX/RX capraz mi, VCC 5V mi kontrol et");
-  }
+  startRadar();
 
   // Kopma nedeni: 15/204=handshake zaman asimi, 202=auth hatasi, 201=AP yok
   WiFi.onEvent([](WiFiEvent_t, WiFiEventInfo_t info) {

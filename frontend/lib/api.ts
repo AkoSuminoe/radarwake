@@ -41,6 +41,7 @@ export interface PresenceCurrent {
   moving_dist: number | null;
   stationary_dist: number | null;
   sensor_online: boolean;
+  radar_ok: boolean | null;
   last_present_at: string | null;
   last_report_at: string | null;
 }

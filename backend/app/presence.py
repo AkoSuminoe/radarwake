@@ -27,6 +27,7 @@ class PresenceIn(BaseModel):
     stationary: bool = False
     moving_dist: int = Field(default=0, ge=0, le=10000)
     stationary_dist: int = Field(default=0, ge=0, le=10000)
+    radar_ok: bool = True  # ESP radardan veri alabiliyor mu
     ack: int | None = None
 
 
@@ -74,6 +75,8 @@ def ingest(body: PresenceIn, request: Request, background: BackgroundTasks, db: 
         db.execute(delete(PresenceEvent).where(PresenceEvent.ts < now - timedelta(days=settings.history_retention_days)))
 
     state.last_report_at = now
+    # Sadece bellekte: DB semasini degistirmeden son rapordaki radar durumu
+    request.app.state.radar_ok = body.radar_ok
     if body.presence:
         state.last_present_at = now
 
@@ -116,7 +119,8 @@ class CurrentOut(BaseModel):
     raw_presence: bool | None
     moving_dist: int | None
     stationary_dist: int | None
-    sensor_online: bool
+    sensor_online: bool  # ESP rapor gonderiyor mu
+    radar_ok: bool | None  # ESP radardan veri alabiliyor mu (None: henuz rapor yok)
     last_present_at: datetime | None
     last_report_at: datetime | None
 
@@ -134,6 +138,7 @@ def current(request: Request, db: Session = Depends(get_db)) -> CurrentOut:
         moving_dist=last.moving_dist if last else None,
         stationary_dist=last.stationary_dist if last else None,
         sensor_online=lr is not None and now - lr <= SENSOR_OFFLINE_AFTER,
+        radar_ok=getattr(request.app.state, "radar_ok", None),
         last_present_at=aware(state.last_present_at),
         last_report_at=lr,
     )

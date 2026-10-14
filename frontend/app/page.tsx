@@ -187,16 +187,18 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
       <section className="card">
         <div className="row">
           <span className="label">Oda</span>
-          <span className={`pill ${presence?.present ? "on" : "off"}`}>
-            {presence ? (presence.present ? "Biri var" : "Boş") : "…"}
+          <span className={`pill ${presence?.present ? "on" : radarDown(presence) ? "waking" : "off"}`}>
+            {!presence ? "…" : radarDown(presence) ? "Radar yok" : presence.present ? "Biri var" : "Boş"}
           </span>
         </div>
         <p className="muted">
           {!presence
             ? ""
             : !presence.sensor_online
-              ? "Radar çevrimdışı"
-              : presence.raw_presence
+              ? "ESP çevrimdışı (elektrik veya Wi-Fi?)"
+              : presence.radar_ok === false
+                ? "Radar bağlı değil: ESP radardan veri alamıyor (kabloları kontrol et)"
+                : presence.raw_presence
                 ? `Algılanan mesafe: ${Math.max(presence.moving_dist ?? 0, presence.stationary_dist ?? 0)} cm`
                 : presence.last_present_at
                   ? `Son görülme: ${ago(presence.last_present_at)}`
@@ -244,6 +246,10 @@ function Timeline({ events }: { events: PresenceEvent[] }) {
       </div>
     </div>
   );
+}
+
+function radarDown(p: PresenceCurrent | null): boolean {
+  return !!p && (!p.sensor_online || p.radar_ok === false);
 }
 
 function ago(iso: string): string {

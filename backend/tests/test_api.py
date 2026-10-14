@@ -75,6 +75,14 @@ def test_presence_recorded(api, ingest, token):
     assert len(hist) == 1 and hist[0]["presence"] is True
 
 
+def test_radar_ok_reported(api, ingest, token):
+    assert api.get("/api/presence/current", headers=token).json()["radar_ok"] is None
+    report(ingest, presence=False, radar_ok=False)
+    assert api.get("/api/presence/current", headers=token).json()["radar_ok"] is False
+    report(ingest, presence=False)
+    assert api.get("/api/presence/current", headers=token).json()["radar_ok"] is True
+
+
 def test_absence_debounced(app, api, ingest, token):
     report(ingest, presence=True)
     report(ingest, presence=False)
