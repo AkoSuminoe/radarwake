@@ -86,7 +86,12 @@ def ingest(body: PresenceIn, request: Request, background: BackgroundTasks, db: 
         db.add(event)
         db.flush()
         if event.id % 1000 == 0:
-            db.execute(delete(PresenceEvent).where(PresenceEvent.ts < now - timedelta(days=settings.history_retention_days)))
+            # synchronize_session=False: SQLite tarihleri timezone'suz dondurur; "evaluate"
+            # oturumdaki kayitlari Python'da now (aware) ile karsilastirip TypeError atiyordu
+            db.execute(
+                delete(PresenceEvent).where(PresenceEvent.ts < now - timedelta(days=settings.history_retention_days)),
+                execution_options={"synchronize_session": False},
+            )
 
     state.last_report_at = now
     if body.presence:

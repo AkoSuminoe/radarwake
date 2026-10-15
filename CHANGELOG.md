@@ -4,6 +4,14 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## [0.2.1] - 2026-10-15
+
+### Fixed
+
+- Reports returned 500 forever once the history reached id 1000: the retention cleanup
+  compared a timezone-naive SQLite timestamp with an aware one. The failed insert rolled
+  back, so every later report hit the same id.
+
 ## [0.2.0] - 2026-10-15
 
 ### Added
@@ -46,5 +54,6 @@ First public release.
   script, one-line agent installer and uninstaller.
 - Prebuilt multi-arch container image on GHCR (amd64, arm64).
 
+[0.2.1]: https://github.com/AkoSuminoe/radarwake/releases/tag/v0.2.1
 [0.2.0]: https://github.com/AkoSuminoe/radarwake/releases/tag/v0.2.0
 [0.1.0]: https://github.com/AkoSuminoe/radarwake/releases/tag/v0.1.0

@@ -1,7 +1,7 @@
 import json
 from datetime import timedelta
 
-from app.models import utcnow
+from app.models import PresenceEvent, utcnow
 from app.power import get_state
 from app.signing import sign
 
@@ -249,3 +249,18 @@ def test_history_throttled(api, ingest, token):
     hist = api.get("/api/presence/history", headers=token).json()
     assert [h["presence"] for h in hist] == [True, False]
     assert api.get("/api/presence/live", headers=token).json()["presence"] is False
+
+
+def test_history_cleanup_at_id_1000(app, ingest):
+    # Regression: the cleanup DELETE ran with the last event loaded in the session and
+    # compared its naive SQLite timestamp to an aware datetime -> 500 on every report.
+    old = utcnow() - timedelta(days=60)
+    with app.state.sessionmaker() as db:
+        db.add(PresenceEvent(id=998, ts=old, presence=True, moving=False, stationary=True, moving_dist=0, stationary_dist=50))
+        db.add(PresenceEvent(id=999, ts=utcnow() - timedelta(minutes=5), presence=False, moving=False,
+                             stationary=False, moving_dist=0, stationary_dist=0))
+        db.commit()
+    assert report(ingest, presence=True).status_code == 200  # id 1000 -> cleanup runs
+    with app.state.sessionmaker() as db:
+        assert db.get(PresenceEvent, 998) is None
+        assert db.get(PresenceEvent, 1000) is not None
