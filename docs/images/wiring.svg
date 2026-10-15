@@ -107,14 +107,12 @@
   <text class="pin" x="656" y="434">SDA</text>
   <text class="pin" x="656" y="474">GND</text>
   <rect x="770" y="395" width="128" height="64" rx="3" fill="#020405" stroke="#1f3a37"/>
-  <text x="775" y="406" fill="#5ce1d0" font-size="7">RADARWAKE</text>
-  <text x="893" y="406" fill="#5ce1d0" font-size="7" text-anchor="end">PC ON</text>
-  <path d="M770 410H898" stroke="#5ce1d0" stroke-width="0.6"/>
-  <path d="M800 455 L774 440 A30 30 0 0 1 826 440 Z" fill="none" stroke="#5ce1d0" stroke-width="0.8"/>
-  <path d="M787 448 A15 15 0 0 1 813 448" fill="none" stroke="#e6f1ef" stroke-width="1.6"/>
-  <text x="834" y="438" fill="#e6f1ef" font-size="16" font-weight="700">1.98</text>
-  <text x="872" y="438" fill="#5ce1d0" font-size="8">m</text>
-  <text x="834" y="452" fill="#5ce1d0" font-size="8">STILL</text>
+  <text x="775" y="406" fill="#dbe9ff" font-size="7">PRESENT</text>
+  <text x="893" y="406" fill="#dbe9ff" font-size="7" text-anchor="end">PC ON</text>
+  <path d="M770 410H898" stroke="#dbe9ff" stroke-width="0.6"/>
+  <text x="826" y="444" fill="#dbe9ff" font-size="24" font-weight="700" text-anchor="middle">1.9</text>
+  <text x="853" y="444" fill="#dbe9ff" font-size="8">m</text>
+  <text x="834" y="455" fill="#dbe9ff" font-size="7" text-anchor="middle">still</text>
 
   <!-- PC817 -->
   <rect class="box" x="560" y="505" width="170" height="110"/>

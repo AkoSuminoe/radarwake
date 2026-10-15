@@ -19,13 +19,14 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from . import auth, power, presence
+from . import auth, display, power, presence
 from .config import Settings
 from .db import make_sessionmaker
 from .ratelimit import RateLimiter
 from .signing import Verifier
 
 INGEST_PATHS = {"/api/presence", "/api/pc/heartbeat"}
+INGEST_PREFIX = "/api/device/"
 SHARED_PATHS = {"/api/health"}
 
 
@@ -38,7 +39,9 @@ class PortSplitMiddleware:
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] == "http" and scope["path"] not in SHARED_PATHS:
             port = (scope.get("server") or (None, None))[1]
-            wanted = self.ingest_port if scope["path"] in INGEST_PATHS else self.api_port
+            path = scope["path"]
+            on_ingest = path in INGEST_PATHS or path.startswith(INGEST_PREFIX)
+            wanted = self.ingest_port if on_ingest else self.api_port
             if port != wanted:
                 await JSONResponse({"detail": "Not Found"}, status_code=404)(scope, receive, send)
                 return
@@ -81,10 +84,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.sessionmaker = make_sessionmaker(settings.database_url)
     app.state.limiter = RateLimiter()
     app.state.agent_verifier = Verifier(settings.pc_agent_secret)
+    app.state.display_cache = {}
+    display.ensure_defaults(app.state.sessionmaker)
 
     app.include_router(auth.router)
     app.include_router(presence.router)
     app.include_router(power.router)
+    app.include_router(display.router)
 
     @app.get("/api/health")
     def health() -> dict:

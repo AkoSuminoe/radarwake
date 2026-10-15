@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from .auth import require_api_key, require_jwt
 from .config import Settings
 from .db import get_db
+from .display import current_profile, version_of
 from .models import PowerCommand, PresenceEvent, utcnow
 from .power import aware, enqueue_press, get_state, pc_is_on, pc_state, send_agent
 from .ratelimit import rate_limit
@@ -42,6 +43,7 @@ class PresenceOut(BaseModel):
     pc: str = "off"  # on | off | waking (ESP ekraninda gosterilir)
     command: str | None = None
     id: int | None = None
+    disp: str = "0"  # ekran bundle surumu; degisince ESP /api/device/display'i indirir
 
 
 def is_present(last_present_at: datetime | None, settings: Settings, now: datetime) -> bool:
@@ -121,6 +123,7 @@ def ingest(body: PresenceIn, request: Request, background: BackgroundTasks, db: 
         cmd.delivered_at = cmd.delivered_at or now
         out.command, out.id = "press_power", cmd.id
 
+    out.disp = version_of(db, current_profile(db, now))
     db.commit()
     return out
 

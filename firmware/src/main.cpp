@@ -54,6 +54,11 @@ uint32_t pendingAck = 0;
 
 char pcState[8] = "?";  // backend cevabindan: on | off | waking
 
+// Ekran profili: rapor cevabindaki "disp" surumu degisince bundle indirilir
+char wantDisp[32] = "";
+char haveDisp[32] = "";
+uint32_t dispRetryAt = 0;
+
 uint32_t pulseEndAt = 0;
 uint32_t ledOffAt = 0;
 
@@ -166,6 +171,7 @@ void handleResponse(const String& body) {
   if (deserializeJson(doc, body)) return;
   if (doc["ack_ok"].as<bool>()) pendingAck = 0;
   if (const char* pc = doc["pc"]) strlcpy(pcState, pc, sizeof(pcState));
+  if (const char* v = doc["disp"]) strlcpy(wantDisp, v, sizeof(wantDisp));
   const char* cmd = doc["command"] | "";
   uint32_t id = doc["id"] | 0;
   if (strcmp(cmd, "press_power") == 0 && id != 0) {
@@ -210,12 +216,58 @@ void sendReport() {
   http.end();
 }
 
+// Aktif ekran profilini (ve varsa GIF karelerini) indirir. PSRAM varsa oraya alinir.
+void fetchDisplay() {
+  const size_t cap = psramFound() ? 160 * 1024 : 48 * 1024;
+  HTTPClient http;
+  http.setTimeout(5000);
+  http.begin(String(BACKEND_URL) + "/api/device/display");
+  http.addHeader("X-API-Key", API_KEY);
+  const char* keys[] = {"X-Display-Version"};
+  http.collectHeaders(keys, 1);
+  int code = http.GET();
+  int size = http.getSize();
+  bool ok = false;
+  if (code == 200 && size > 2 && (size_t)size <= cap) {
+    uint8_t* buf = (uint8_t*)(psramFound() ? ps_malloc(size) : malloc(size));
+    if (buf) {
+      WiFiClient* stream = http.getStreamPtr();
+      size_t got = 0;
+      uint32_t start = millis();
+      while (got < (size_t)size && millis() - start < 8000) {
+        size_t avail = stream->available();
+        if (avail) {
+          got += stream->readBytes(buf + got, min(avail, (size_t)size - got));
+        } else if (!http.connected()) {
+          break;
+        } else {
+          delay(1);
+        }
+        esp_task_wdt_reset();
+      }
+      ok = got == (size_t)size && displaySetBundle(buf, size);
+      if (!ok) free(buf);
+    }
+  }
+  if (ok) {
+    strlcpy(haveDisp, http.header("X-Display-Version").c_str(), sizeof(haveDisp));
+    if (!haveDisp[0]) strlcpy(haveDisp, wantDisp, sizeof(haveDisp));
+    Serial.printf("[disp] bundle %d bayt, surum %s\n", size, haveDisp);
+  } else {
+    Serial.printf("[disp] indirilemedi (http %d, %d bayt), 10 sn sonra tekrar\n", code, size);
+    dispRetryAt = millis() + 10000;
+  }
+  http.end();
+}
+
 void setup() {
   Serial.begin(115200);
   // Native USB: bilgisayar portu acana kadar kisa bekle, acilis loglari kaybolmasin
   for (uint32_t t = millis(); !Serial && millis() - t < 3000;) delay(10);
   delay(200);
   Serial.println("\n[radarwake] basliyor");
+
+  Serial.printf("[radarwake] PSRAM: %u KB\n", ESP.getPsramSize() / 1024);
 
   esp_task_wdt_init(WDT_TIMEOUT_S, true);
   esp_task_wdt_add(NULL);
@@ -254,14 +306,15 @@ void loop() {
 
   readRadar();
 
+  // Hedef mesafesi: sabit hedef varsa onun mesafesi (daha kararli), yoksa hareketli hedef
+  uint16_t dist = current.stationary && current.stationaryDist ? current.stationaryDist : current.movingDist;
   DisplayData dd = {
       WiFi.status() == WL_CONNECTED,
       WiFi.RSSI(),
       radar.isConnected(),
       current.presence,
       current.moving,
-      (uint16_t)(current.moving ? current.movingDist : current.stationaryDist),
-      (uint8_t)max(current.moving ? current.movingEnergy : 0, current.stationary ? current.stationaryEnergy : 0),
+      current.presence ? dist : (uint16_t)0,
       pcState,
       ledOffAt != 0,
   };
@@ -283,5 +336,10 @@ void loop() {
     lastSentPresence = current.presence;
     lastReportAt = millis();
     forceReport = false;
+  }
+
+  if (!pulseEndAt && wantDisp[0] && strcmp(wantDisp, haveDisp) != 0 && WiFi.status() == WL_CONNECTED &&
+      (int32_t)(millis() - dispRetryAt) >= 0) {
+    fetchDisplay();
   }
 }

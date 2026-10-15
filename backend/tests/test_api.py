@@ -132,6 +132,7 @@ def test_wake_command_flow(api, ingest, token):
     assert api.get("/api/pc/status", headers=token).json()["state"] == "waking"
 
     out = report(ingest).json()
+    out.pop("disp")
     assert out == {"ack_ok": False, "pc": "waking", "command": "press_power", "id": cmd_id}
 
     out = report(ingest, ack=cmd_id).json()

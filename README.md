@@ -13,10 +13,11 @@ See who is at the desk, and wake, sleep or shut down the PC from your phone.
 ![Next.js](https://img.shields.io/badge/dashboard-Next.js%2015-black)
 ![Docker](https://img.shields.io/badge/server-Docker-2496ED)
 
-<img src="docs/images/sonar.gif" width="440" alt="Live sonar view: a person detected at 2 m, moving">
+<img src="docs/images/screens.gif" width="760" alt="Display tab: live previews of the OLED screen profiles, including animated GIF screens">
 
-<sub>Live dashboard fed by the LD2410C radar. The radar measures range, not bearing, so a
-target is drawn as an arc at its distance, with a fading echo trail.</sub>
+<sub>Screen profiles for the sensor's OLED, previewed live in the dashboard: calm status,
+sonar, clock and uploaded GIFs converted to 1-bit. The previews use the exact frames the
+ESP32 downloads.</sub>
 
 </div>
 
@@ -32,22 +33,26 @@ together.
 The project spans the full stack: embedded C++ firmware, a hardened Python API, a React
 dashboard, a Windows service, Docker packaging, CI and release automation.
 
+<p align="center"><img src="docs/images/overview.png" width="860" alt="Overview: calm range readout, workstation controls and 24 h activity"></p>
+
 <table>
   <tr>
-    <td align="center" width="33%"><img src="docs/images/phone.png" alt="Dashboard on a phone"><br><sub><b>Phone dashboard</b></sub></td>
-    <td align="center" width="33%"><img src="docs/images/login.png" alt="Login screen"><br><sub><b>LAN-only login</b></sub></td>
-    <td align="center" width="33%"><img src="docs/images/desktop.png" alt="Dashboard on desktop"><br><sub><b>Desktop view</b></sub></td>
+    <td align="center" width="25%"><img src="docs/images/phone.png" alt="Overview on a phone"><br><sub><b>Phone</b></sub></td>
+    <td align="center" width="25%"><img src="docs/images/login.png" alt="Login screen"><br><sub><b>LAN-only login</b></sub></td>
+    <td align="center" width="50%"><img src="docs/images/editor.png" alt="Screen editor with six layouts and a live OLED preview"><br><sub><b>Screen editor</b></sub></td>
   </tr>
 </table>
 
 ## Features
 
-- **Live sonar view:** range, motion and signal strength, updated every second while
-  someone is present, with a 24 h occupancy timeline.
+- **Calm live readout:** distance, motion and signal, smoothed so the number only changes
+  on a real move, with a 24 h occupancy timeline.
 - **Real power-button wake:** works from off, sleep or hibernate, and on Wi-Fi PCs where
   Wake-on-LAN does not.
 - **Sleep / shut down from the phone** through an HMAC-signed agent on the PC.
-- **OLED status screen** on the sensor with a mini sonar and the distance (optional).
+- **Custom OLED screens:** unlimited profiles in six layouts (calm status, sonar, clock,
+  GIF, GIF + distance, GIF + corner), your own GIFs uploaded from the phone, rotation
+  between screens and a separate screen for an empty room.
 - **Private by design:** home network only, argon2 password login, authenticated device
   traffic, replay protection, read-only non-root container.
 - **One-line installers** for the server (Linux / WSL2) and the Windows agent, built and
@@ -58,8 +63,8 @@ dashboard, a Windows service, Docker packaging, CI and release automation.
 | Layer | Technology |
 |---|---|
 | Firmware | ESP32-S3, Arduino core 2.x on PlatformIO, LD2410C over UART, U8g2 (OLED), NVS |
-| Backend | Python 3.12, FastAPI, SQLAlchemy 2 + SQLite, PyJWT, argon2 (pwdlib) |
-| Dashboard | Next.js 15 static export, React 19, hand-drawn SVG sonar |
+| Backend | Python 3.12, FastAPI, SQLAlchemy 2 + SQLite, PyJWT, argon2 (pwdlib), Pillow (GIF → 1-bit) |
+| Dashboard | Next.js 15 static export, React 19, canvas OLED preview, self-hosted Inter / JetBrains Mono |
 | PC agent | Python standard library, packaged as a standalone `.exe` (PyInstaller) |
 | Ops | Docker multi-stage build, multi-arch image on GHCR, GitHub Actions CI + releases |
 
@@ -169,10 +174,29 @@ still works.
 | SCK | GPIO9 |
 | SDA | GPIO8 |
 
-Shows a mini sonar, the distance, motion state, signal strength, Wi-Fi bars and PC state.
-It turns off after 5 minutes with nobody around and shifts by a pixel every minute to
-limit burn-in. For 1.3" SH1106 panels add `#define OLED_SH1106` to `config.h`. Without a
-display the firmware logs `[oled] ekran bulunamadi` and carries on.
+What the OLED shows is chosen in the dashboard's **Display** tab:
+
+| Layout | Shows |
+|---|---|
+| Calm status | distance in 0.1 m steps, presence, PC state, Wi-Fi; no animation |
+| Sonar | range arc, optional slow sweep |
+| Clock | time and date (NTP, time zone from the dashboard), presence dot |
+| GIF | full-screen 128×64 animation |
+| GIF + distance | 64×64 animation with the reading beside it |
+| GIF + corner | full-screen animation, distance in a chosen corner |
+
+Readings are smoothed on the device (moving average, 8 cm hysteresis, at most one change
+per second, motion label held for 2 s), so the number stays readable. GIF, PNG and WebP
+uploads (up to 8 MB) are converted on the server to 1-bit frames (dither or solid, fit or
+fill, invert, brightness) and stay on the server, never in the repo. The ESP32 keeps one
+screen in PSRAM and downloads a new one only when the server's display version changes,
+so switching, rotation and the empty-room screen take effect within one report (1-10 s).
+The panel turns off after a configurable time with nobody around, and static layouts
+shift by a pixel every minute against burn-in. For 1.3" SH1106 panels add
+`#define OLED_SH1106` to `config.h`. Without a display the firmware logs
+`[oled] ekran bulunamadi` and carries on.
+
+<p align="center"><img src="docs/images/library.png" width="760" alt="GIF library: original next to the converted 1-bit preview, with fit, dither, invert and brightness controls"></p>
 
 **PC817 optocoupler → power switch**
 
@@ -276,6 +300,10 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1 -ServerIp <server-ip> -Po
 | `POST /api/pc/sleep` | 8000 | JWT | `{"action":"sleep"\|"shutdown"}` |
 | `POST /api/presence` | 8001 | `X-API-Key` | ESP32 report; reply carries commands + PC state |
 | `POST /api/pc/heartbeat` | 8001 | HMAC | pc-agent |
+| `GET  /api/device/display` | 8001 | `X-API-Key` | current OLED screen bundle (JSON header + 1-bit frames) |
+| `GET/POST/PATCH/DELETE /api/display/profiles` | 8000 | JWT | OLED screen profiles; `POST …/{id}/activate` |
+| `GET/PUT /api/display/settings` | 8000 | JWT | rotation, empty-room screen, screen-off timer, time zone |
+| `GET/POST/PATCH/DELETE /api/display/animations` | 8000 | JWT | GIF library (raw-body upload) and conversion options |
 | `GET  /api/health` | both | - | healthcheck |
 
 Each route is only served on its own port; the other port returns 404.
@@ -338,9 +366,9 @@ CI runs all three plus `shellcheck` and a PowerShell parse check on every push.
 ## Roadmap
 
 - [x] Backend: auth, SQLite, Docker Compose, power command queue
-- [x] Firmware: LD2410C, authenticated reports, power-button pulse, OLED
+- [x] Firmware: LD2410C, authenticated reports, power-button pulse, OLED screen profiles with GIFs
 - [x] pc-agent: heartbeat, signed sleep/shutdown, standalone exe
-- [x] Dashboard: live sonar, workstation controls, 24 h activity
+- [x] Dashboard: calm live readout, workstation controls, 24 h activity, OLED screen editor
 - [x] LAN-only deployment, one-line installers, release pipeline
 - [ ] Optocoupler install and end-to-end wake test
 - [ ] Radar tuning and LD2410C engineering mode for per-zone detection (desk vs. bed)
